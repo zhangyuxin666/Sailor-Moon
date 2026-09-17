@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports: ["127.0.0.1:55432:5432"]
+    environment:
+      POSTGRES_DB: activity
+      POSTGRES_USER: activity
+      POSTGRES_PASSWORD: activity
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U activity"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  api:
+    build: .
+    environment: &app_env
+      DATABASE_URL: postgresql+psycopg://activity:activity@postgres:5432/activity
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker"]
+    environment: *app_env
+    depends_on:
+      postgres: {condition: service_healthy}
+  scheduler:
+    build: .
+    command: ["python", "-m", "app.scheduler.runner"]
+    environment: *app_env
+    depends_on:
+      postgres: {condition: service_healthy}
+volumes:
+  postgres_data:

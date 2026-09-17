@@ -38,9 +38,9 @@
   （`app/core/retry.py`、`app/tools/base.py`）。
 - **权限控制**：所有按活动操作的接口在 service 层校验 `user_id` 是否为创建者，
   越权返回 403（`app/core/permissions.py`）。报名提交是公开接口。
-- **提醒可取消**：`POST /reminders/{id}/cancel` 从调度器移除并置 DB 状态；
-  服务重启后从 DB 重建未触发且未取消的提醒，已过期的立即补发
-  （`app/scheduler/reminders.py`）。
+- **统一数据层**：SQLAlchemy 同时支持本地 SQLite 与部署 PostgreSQL，部署配置见 `compose.yml`。
+- **持久化后台执行**：API 返回执行编号，独立 Worker 执行 Agent 和工具；失败任务自动重试且状态可查询。
+- **提醒可取消**：独立 Scheduler 只投递到期任务，Worker 发送前再次检查状态。
 
 ## 快速开始
 
@@ -50,14 +50,16 @@ source .venv/Scripts/activate   # Windows Git Bash；PowerShell 用 .venv\Script
 pip install -r requirements.txt
 cp .env.example .env            # 可选，不配也能跑（离线 Mock）
 
-uvicorn app.main:app --reload   # 启动服务，文档在 http://127.0.0.1:8000/docs
+uvicorn app.main:app --reload   # 终端 1：API
+python -m app.worker            # 终端 2：后台任务
+python -m app.scheduler.runner  # 终端 3：提醒调度
 python -m pytest tests/ -v      # 运行测试
 ```
 
 ## API 示例
 
 ```bash
-# 一句话发起活动（策划/问卷/任务/提醒自动完成）
+# 一句话发起活动（返回 202、activity_id 和 run_id）
 curl -X POST http://127.0.0.1:8000/activities \
   -H "Content-Type: application/json" \
   -d '{"user_id": "alice", "text": "下周三晚上7点社团招新宣讲会"}'
@@ -76,13 +78,17 @@ curl -X POST "http://127.0.0.1:8000/activities/{activity_id}/recap?user_id=alice
 curl -X POST "http://127.0.0.1:8000/reminders/{reminder_id}/cancel?user_id=alice"
 ```
 
+完整接口契约见 `docs/API.md`，四人职责见 `docs/TEAM.md`。部署 PostgreSQL、API、Worker 和 Scheduler 可运行 `docker compose up --build`。
+
 ## 目录结构
 
 ```
 app/
   main.py               FastAPI 入口
   config.py             环境变量配置
-  models/               SQLite schema + Pydantic 模型
+  models/               SQLite/PostgreSQL 数据层 + Pydantic 模型
+  jobs.py               持久化后台队列
+  worker.py             Agent/工具任务 Worker
   core/                 幂等、重试、权限、异常
   tools/                工具基类（幂等+重试封装）与消息/表单/日历工具
   agent/                LLM 客户端（真实/Mock）、提示词、规划器、编排器

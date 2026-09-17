@@ -1,98 +1,84 @@
-import sqlite3
+import re
 from contextlib import contextmanager
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS activities (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL,           -- 创建者，权限控制的依据
-    title       TEXT NOT NULL,
-    raw_input   TEXT NOT NULL,           -- 用户的一句话原始输入
-    plan_json   TEXT,                    -- LLM 生成的策划 JSON
-    status      TEXT NOT NULL DEFAULT 'planned',
-    created_at  TEXT NOT NULL
-);
+from sqlalchemy import Column, Integer, MetaData, String, Table, Text, UniqueConstraint, create_engine, text
 
-CREATE TABLE IF NOT EXISTS steps (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    activity_id TEXT NOT NULL,
-    step        TEXT NOT NULL,           -- 编排器步骤名
-    status      TEXT NOT NULL,           -- done / failed
-    detail      TEXT,
-    created_at  TEXT NOT NULL
-);
+metadata = MetaData()
 
-CREATE TABLE IF NOT EXISTS tasks (
-    id          TEXT PRIMARY KEY,
-    activity_id TEXT NOT NULL,
-    title       TEXT NOT NULL,
-    assignee    TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'pending',
-    created_at  TEXT NOT NULL
-);
+activities = Table("activities", metadata,
+    Column("id", String, primary_key=True), Column("user_id", String, nullable=False, index=True),
+    Column("title", String, nullable=False), Column("raw_input", Text, nullable=False),
+    Column("plan_json", Text), Column("status", String, nullable=False, default="queued"),
+    Column("created_at", String, nullable=False))
+background_jobs = Table("background_jobs", metadata,
+    Column("id", String, primary_key=True), Column("kind", String, nullable=False),
+    Column("ref_id", String, nullable=False, index=True),
+    Column("status", String, nullable=False, index=True), Column("attempts", Integer, nullable=False, default=0),
+    Column("error", Text), Column("created_at", String, nullable=False), Column("started_at", String),
+    Column("finished_at", String), UniqueConstraint("kind", "ref_id", name="uq_job_kind_ref"))
+steps = Table("steps", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True), Column("activity_id", String, nullable=False, index=True),
+    Column("step", String, nullable=False), Column("status", String, nullable=False), Column("detail", Text),
+    Column("created_at", String, nullable=False))
+tasks = Table("tasks", metadata,
+    Column("id", String, primary_key=True), Column("activity_id", String, nullable=False, index=True),
+    Column("title", String, nullable=False), Column("assignee", String, nullable=False),
+    Column("status", String, nullable=False, default="pending"), Column("created_at", String, nullable=False))
+forms = Table("forms", metadata,
+    Column("id", String, primary_key=True), Column("activity_id", String, nullable=False, index=True),
+    Column("title", String, nullable=False), Column("fields_json", Text, nullable=False), Column("created_at", String, nullable=False))
+registrations = Table("registrations", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True), Column("form_id", String, nullable=False, index=True),
+    Column("name", String, nullable=False), Column("contact", String, nullable=False),
+    Column("extra_json", Text), Column("created_at", String, nullable=False))
+reminders = Table("reminders", metadata,
+    Column("id", String, primary_key=True), Column("activity_id", String, nullable=False, index=True),
+    Column("message", Text, nullable=False), Column("remind_at", String, nullable=False, index=True),
+    Column("status", String, nullable=False, default="scheduled"), Column("created_at", String, nullable=False),
+    UniqueConstraint("activity_id", "remind_at", name="uq_reminder_activity_time"))
+messages = Table("messages", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True), Column("activity_id", String, index=True),
+    Column("recipient", String, nullable=False), Column("content", Text, nullable=False), Column("created_at", String, nullable=False))
+idempotency_keys = Table("idempotency_keys", metadata,
+    Column("key", String, primary_key=True), Column("tool_name", String, nullable=False),
+    Column("result_json", Text, nullable=False), Column("created_at", String, nullable=False))
 
-CREATE TABLE IF NOT EXISTS forms (
-    id          TEXT PRIMARY KEY,
-    activity_id TEXT NOT NULL,
-    title       TEXT NOT NULL,
-    fields_json TEXT NOT NULL,
-    created_at  TEXT NOT NULL
-);
+class ResultAdapter:
+    def __init__(self, result):
+        self._result = result
+    def fetchone(self):
+        return self._result.mappings().fetchone()
+    def fetchall(self):
+        return self._result.mappings().fetchall()
 
-CREATE TABLE IF NOT EXISTS registrations (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    form_id     TEXT NOT NULL,
-    name        TEXT NOT NULL,
-    contact     TEXT NOT NULL,
-    extra_json  TEXT,
-    created_at  TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS reminders (
-    id          TEXT PRIMARY KEY,
-    activity_id TEXT NOT NULL,
-    message     TEXT NOT NULL,
-    remind_at   TEXT NOT NULL,           -- ISO 时间
-    status      TEXT NOT NULL DEFAULT 'scheduled',  -- scheduled / sent / cancelled
-    created_at  TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    activity_id TEXT,
-    recipient   TEXT NOT NULL,
-    content     TEXT NOT NULL,
-    created_at  TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS idempotency_keys (
-    key         TEXT PRIMARY KEY,
-    tool_name   TEXT NOT NULL,
-    result_json TEXT NOT NULL,           -- 首次执行结果的缓存，命中直接返回
-    created_at  TEXT NOT NULL
-);
-"""
-
+class ConnectionAdapter:
+    """Keep the original qmark SQL API while SQLAlchemy adapts the database."""
+    def __init__(self, connection):
+        self._connection = connection
+    def execute(self, sql: str, params=()):
+        values = list(params or ())
+        index = 0
+        def replace(_match):
+            nonlocal index
+            name = f"p{index}"
+            index += 1
+            return f":{name}"
+        statement = re.sub(r"\?", replace, sql)
+        binds = {f"p{i}": value for i, value in enumerate(values)}
+        return ResultAdapter(self._connection.execute(text(statement), binds))
 
 class Database:
-    """SQLite 轻量封装：每次操作一个连接，事务自动提交/回滚。"""
-
-    def __init__(self, path: str = "activity.db"):
-        self.path = path
+    """Unified database: SQLite for local/test and PostgreSQL for deployment."""
+    def __init__(self, url: str = "sqlite:///activity.db"):
+        if "://" not in url:
+            url = f"sqlite:///{url}"
+        connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+        self.url = url
+        self.engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
         self.init()
-
     @contextmanager
     def connect(self):
-        conn = sqlite3.connect(self.path)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
-
+        with self.engine.begin() as connection:
+            yield ConnectionAdapter(connection)
     def init(self):
-        with self.connect() as conn:
-            conn.executescript(SCHEMA)
+        metadata.create_all(self.engine)

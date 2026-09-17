@@ -1,10 +1,12 @@
 import logging
 import uuid
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from ..core.exceptions import NotFoundError
+from ..config import settings
 from ..tools.base import ToolContext
 from ..tools.registry import get_tool
 
@@ -18,9 +20,10 @@ class ReminderService:
     即使调度器异常重试也不会重复发送。
     """
 
-    def __init__(self, db, scheduler=None):
+    def __init__(self, db, scheduler=None, queue=None):
         self.db = db
-        self.scheduler = scheduler or BackgroundScheduler()
+        self.scheduler = scheduler or BackgroundScheduler(timezone=ZoneInfo(settings.timezone))
+        self.queue = queue
 
     def start(self):
         if not self.scheduler.running:
@@ -81,15 +84,21 @@ class ReminderService:
             if remind_at > datetime.now():
                 self._add_job(row["id"], remind_at)
             else:
-                self._fire(row["id"])
+                self._enqueue(row["id"])
 
     def _add_job(self, reminder_id: str, remind_at: datetime):
         self.scheduler.add_job(
-            self._fire, "date", run_date=remind_at, args=[reminder_id],
+            self._enqueue, "date", run_date=remind_at, args=[reminder_id],
             id=reminder_id, replace_existing=True,
         )
 
-    def _fire(self, reminder_id: str):
+    def _enqueue(self, reminder_id: str):
+        if self.queue is None:
+            return self.deliver(reminder_id)
+        self.queue.enqueue("reminder", reminder_id)
+
+    def deliver(self, reminder_id: str):
+        """由 Worker 实际发送；发送前再次检查取消状态。"""
         with self.db.connect() as conn:
             row = conn.execute(
                 "SELECT * FROM reminders WHERE id = ? AND status = 'scheduled'", (reminder_id,)

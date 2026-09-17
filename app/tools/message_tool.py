@@ -35,7 +35,7 @@ class SendMessageTool(Tool):
     def run(self, ctx: ToolContext, recipient: str, content: str) -> dict:
         logger.info("[MockMessage] -> %s: %s", recipient, content)
         cur = ctx.conn.execute(
-            "INSERT INTO messages (activity_id, recipient, content, created_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO messages (activity_id, recipient, content, created_at) VALUES (?, ?, ?, ?) RETURNING id",
             (ctx.activity_id, recipient, content, datetime.now().isoformat()),
         )
-        return {"message_id": cur.lastrowid, "recipient": recipient, "status": "sent"}
+        return {"message_id": cur.fetchone()["id"], "recipient": recipient, "status": "sent"}

@@ -12,11 +12,43 @@ from ..scheduler.reminders import ReminderService
 class ActivityService:
     """业务门面：对外提供活动相关操作，统一做权限校验。"""
 
-    def __init__(self, db, llm: LLMClient, reminders: ReminderService):
+    def __init__(self, db, llm: LLMClient, reminders: ReminderService, queue=None):
         self.db = db
         self.llm = llm
         self.reminders = reminders
         self.orchestrator = Orchestrator(db, llm, reminders)
+        self.queue = queue
+
+    def queue_activity(self, user_id: str, text: str) -> dict:
+        """创建活动并提交持久化后台任务，供 HTTP API 使用。"""
+        if self.queue is None:
+            raise RuntimeError("未配置后台任务队列")
+        activity_id = uuid.uuid4().hex[:12]
+        with self.db.connect() as conn:
+            conn.execute(
+                "INSERT INTO activities (id, user_id, title, raw_input, status, created_at) "
+                "VALUES (?, ?, ?, ?, 'queued', ?)",
+                (activity_id, user_id, text[:20], text, datetime.now().isoformat()),
+            )
+        job = self.queue.enqueue("activity", activity_id)
+        return {"activity_id": activity_id, "run_id": job["id"], "status": job["status"]}
+
+    def run_queued_activity(self, activity_id: str) -> dict:
+        """Worker 入口：读取已落库输入并执行活动工作流。"""
+        with self.db.connect() as conn:
+            row = conn.execute("SELECT * FROM activities WHERE id = ?", (activity_id,)).fetchone()
+            if not row:
+                raise NotFoundError(f"活动不存在: {activity_id}")
+            conn.execute("UPDATE activities SET status = 'running' WHERE id = ?", (activity_id,))
+        try:
+            result = self.orchestrator.run(row["user_id"], activity_id, row["raw_input"])
+            with self.db.connect() as conn:
+                conn.execute("UPDATE activities SET status = 'ready' WHERE id = ?", (activity_id,))
+            return result
+        except Exception:
+            with self.db.connect() as conn:
+                conn.execute("UPDATE activities SET status = 'failed' WHERE id = ?", (activity_id,))
+            raise
 
     def create_activity_from_text(self, user_id: str, text: str) -> dict:
         """一句话发起活动：建档 → 编排器自动跑全流程 → 返回活动详情。"""
@@ -51,10 +83,11 @@ class ActivityService:
             if not conn.execute("SELECT 1 FROM forms WHERE id = ?", (form_id,)).fetchone():
                 raise NotFoundError(f"问卷不存在: {form_id}")
             cur = conn.execute(
-                "INSERT INTO registrations (form_id, name, contact, extra_json, created_at) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO registrations (form_id, name, contact, extra_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?) RETURNING id",
                 (form_id, name, contact, json.dumps(extra, ensure_ascii=False), datetime.now().isoformat()),
             )
-            return {"registration_id": cur.lastrowid, "form_id": form_id}
+            return {"registration_id": cur.fetchone()["id"], "form_id": form_id}
 
     def form_stats(self, user_id: str, activity_id: str) -> dict:
         with self.db.connect() as conn:
