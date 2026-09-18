@@ -139,3 +139,25 @@ class ActivityService:
                 raise NotFoundError(f"提醒不存在: {reminder_id}")
             check_activity_owner(conn, row["activity_id"], user_id)
             return self.reminders.cancel(conn, reminder_id)
+
+    def update_task(self, user_id: str, task_id: str, status: str) -> dict:
+        """更新任务进度，只有所属活动的创建者可以操作。"""
+        with self.db.connect() as conn:
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            if not row:
+                raise NotFoundError(f"任务不存在: {task_id}")
+            check_activity_owner(conn, row["activity_id"], user_id)
+            conn.execute("UPDATE tasks SET status = ? WHERE id = ?", (status, task_id))
+            return dict(conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone())
+
+    def get_calendar_ics(self, user_id: str, activity_id: str) -> str:
+        """读取已生成的日历文件，避免再次创建事件。"""
+        with self.db.connect() as conn:
+            check_activity_owner(conn, activity_id, user_id)
+            row = conn.execute(
+                "SELECT result_json FROM idempotency_keys WHERE key = ? AND tool_name = 'create_calendar_event'",
+                (f"cal:{activity_id}",),
+            ).fetchone()
+            if not row:
+                raise NotFoundError("该活动还没有日历事件")
+            return json.loads(row["result_json"])["ics"]

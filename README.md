@@ -41,6 +41,8 @@
 - **统一数据层**：SQLAlchemy 同时支持本地 SQLite 与部署 PostgreSQL，部署配置见 `compose.yml`。
 - **持久化后台执行**：API 返回执行编号，独立 Worker 执行 Agent 和工具；失败任务自动重试且状态可查询。
 - **提醒可取消**：独立 Scheduler 只投递到期任务，Worker 发送前再次检查状态。
+- **任务进度**：活动创建者可将任务标记为 `pending` 或 `done`，复盘会读取最新进度。
+- **日历下载**：活动创建者可下载已生成的 ICS 文件；未带时区的活动时间按 `TIMEZONE` 解释。
 
 ## 快速开始
 
@@ -76,6 +78,13 @@ curl -X POST "http://127.0.0.1:8000/activities/{activity_id}/recap?user_id=alice
 
 # 取消提醒
 curl -X POST "http://127.0.0.1:8000/reminders/{reminder_id}/cancel?user_id=alice"
+
+# 完成任务（任务 ID 可在活动详情的 tasks 中找到）
+curl -X PATCH "http://127.0.0.1:8000/tasks/{task_id}?user_id=alice" \
+  -H "Content-Type: application/json" -d '{"status": "done"}'
+
+# 下载日历事件
+curl -o activity.ics "http://127.0.0.1:8000/activities/{activity_id}/calendar.ics?user_id=alice"
 ```
 
 完整接口契约见 `docs/API.md`，四人职责见 `docs/TEAM.md`。部署 PostgreSQL、API、Worker 和 Scheduler 可运行 `docker compose up --build`。

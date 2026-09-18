@@ -26,9 +26,31 @@ def test_api_smoke():
     detail = client.get(f"/activities/{activity_id}", params={"user_id": "alice"}).json()
     form_id = detail["forms"][0]["id"]
     reminder_id = detail["reminders"][0]["id"]
+    task_id = detail["tasks"][0]["id"]
 
     # 越权访问被拒
     assert client.get(f"/activities/{activity_id}", params={"user_id": "bob"}).status_code == 403
+
+    # 任务状态可更新，复盘会使用最新状态；其他用户不能修改
+    assert client.patch(
+        f"/tasks/{task_id}", params={"user_id": "bob"}, json={"status": "done"}
+    ).status_code == 403
+    assert client.patch(
+        f"/tasks/{task_id}", params={"user_id": "alice"}, json={"status": "invalid"}
+    ).status_code == 422
+    task = client.patch(
+        f"/tasks/{task_id}", params={"user_id": "alice"}, json={"status": "done"}
+    ).json()
+    assert task["status"] == "done"
+
+    # 下载已生成的日历文件，不会重复创建事件
+    calendar_url = f"/activities/{activity_id}/calendar.ics"
+    assert client.get(calendar_url, params={"user_id": "bob"}).status_code == 403
+    calendar = client.get(calendar_url, params={"user_id": "alice"})
+    assert calendar.status_code == 200
+    assert calendar.headers["content-type"].startswith("text/calendar")
+    assert "BEGIN:VCALENDAR" in calendar.text
+    assert "DTSTART:" in calendar.text
 
     # 报名 + 统计
     assert client.post(
@@ -38,7 +60,9 @@ def test_api_smoke():
     assert stats["count"] == 1
 
     # 复盘
-    assert client.post(f"/activities/{activity_id}/recap", params={"user_id": "alice"}).status_code == 200
+    recap = client.post(f"/activities/{activity_id}/recap", params={"user_id": "alice"})
+    assert recap.status_code == 200
+    assert "-done" in recap.json()["recap"]
 
     # 取消提醒
     resp = client.post(f"/reminders/{reminder_id}/cancel", params={"user_id": "alice"})

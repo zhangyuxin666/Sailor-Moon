@@ -28,6 +28,11 @@
 - `POST /activities/{activity_id}/recap?user_id=alice`：根据真实报名和任务数据生成复盘。
 - `POST /reminders/{reminder_id}/cancel?user_id=alice`：取消尚未发送的提醒。
 
+## 任务与日历
+
+- `PATCH /tasks/{task_id}?user_id=alice`：创建者更新任务进度，请求体为 `{"status":"pending"}` 或 `{"status":"done"}`；复盘使用最新状态。
+- `GET /activities/{activity_id}/calendar.ics?user_id=alice`：创建者下载已生成的日历事件。活动尚未由 Worker 处理完成时返回 `404`。
+
 ## B 负责的 RAG 内部接口
 
 RAG 不直接暴露给公网，由规划器调用：

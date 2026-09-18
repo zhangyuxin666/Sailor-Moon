@@ -16,6 +16,15 @@ class ReminderStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class TaskStatus(str, Enum):
+    PENDING = "pending"
+    DONE = "done"
+
+
+class TaskUpdate(BaseModel):
+    status: TaskStatus
+
+
 class TaskItem(BaseModel):
     title: str
     assignee: str

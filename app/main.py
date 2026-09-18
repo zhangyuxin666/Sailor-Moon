@@ -2,14 +2,14 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from .agent.llm import get_llm
 from .config import settings
 from .core.exceptions import NotFoundError, PermissionDeniedError
 from .core.permissions import check_activity_owner
 from .models.database import Database
-from .models.schemas import ActivityCreate, RegistrationIn
+from .models.schemas import ActivityCreate, RegistrationIn, TaskUpdate
 from .jobs import JobQueue
 from .scheduler.reminders import ReminderService
 from .services.activity_service import ActivityService
@@ -92,3 +92,17 @@ def recap(activity_id: str, user_id: str):
 @app.post("/reminders/{reminder_id}/cancel")
 def cancel_reminder(reminder_id: str, user_id: str):
     return service.cancel_reminder(user_id, reminder_id)
+
+
+@app.patch("/tasks/{task_id}")
+def update_task(task_id: str, user_id: str, body: TaskUpdate):
+    return service.update_task(user_id, task_id, body.status.value)
+
+
+@app.get("/activities/{activity_id}/calendar.ics")
+def download_calendar(activity_id: str, user_id: str):
+    return Response(
+        content=service.get_calendar_ics(user_id, activity_id),
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="activity.ics"'},
+    )
