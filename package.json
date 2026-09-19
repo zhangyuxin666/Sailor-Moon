@@ -1,0 +1,11 @@
+{
+  "name": "activity-assistant-qq-gateway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "qq-gateway": "node --env-file=.env app/qq_gateway.mjs"
+  },
+  "dependencies": {
+    "@tencent-connect/qqbot-nodejs": "1.0.4"
+  }
+}

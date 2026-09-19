@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录 · 活动管家</title>
+  <link rel="stylesheet" href="/static/portal.css">
+  <link rel="stylesheet" href="/static/security.css">
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-brand-panel">
+      <div class="portal-brand"><span>活</span><strong>活动管家</strong></div>
+      <div class="auth-hero">
+        <p>CLASS OPERATIONS</p>
+        <h1>班级里的每件事，<br>都有清楚的进度。</h1>
+        <ul><li>收作业与资料</li><li>待办分配和完成追踪</li><li>QQ 自动提醒未完成人员</li></ul>
+      </div>
+    </section>
+    <section class="auth-form-panel">
+      <form id="authForm" class="auth-form">
+        <p class="portal-eyebrow" id="authEyebrow">WELCOME BACK</p>
+        <h2 id="authTitle">登录工作台</h2>
+        <p id="authDescription">管理者和参与者使用各自账号登录。</p>
+        <label id="displayNameField" class="hidden">姓名<input id="displayName" autocomplete="name"></label>
+        <label id="organizationField" class="hidden">组织名称<input id="organizationName" value="我的班级组织"></label>
+        <label>用户名<input id="username" autocomplete="username" required></label>
+        <label>密码<input id="password" type="password" autocomplete="current-password" required minlength="6"></label>
+        <label id="privacyField" class="privacy-check hidden"><input id="acceptPrivacy" type="checkbox">我已阅读并同意 <a href="/privacy" target="_blank">隐私政策与用户协议</a></label>
+        <button id="authButton" type="submit">登录 <b>→</b></button>
+        <div id="authError" class="auth-error hidden"></div>
+      </form>
+    </section>
+  </main>
+  <script src="/static/login.js" defer></script>
+</body>
+</html>

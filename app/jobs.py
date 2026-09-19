@@ -76,10 +76,11 @@ class JobQueue:
 
 
 class Worker:
-    def __init__(self, queue, service, reminders):
+    def __init__(self, queue, service, reminders, classroom_service=None):
         self.queue = queue
         self.service = service
         self.reminders = reminders
+        self.classroom_service = classroom_service
 
     def run_once(self) -> bool:
         job = self.queue.claim_next()
@@ -90,6 +91,18 @@ class Worker:
                 self.service.run_queued_activity(job["ref_id"])
             elif job["kind"] == "reminder":
                 self.reminders.deliver(job["ref_id"])
+            elif job["kind"] == "todo_reminder":
+                with self.queue.db.connect() as conn:
+                    reminder = conn.execute(
+                        "SELECT * FROM todo_reminders WHERE id = ? AND status = 'scheduled'",
+                        (job["ref_id"],),
+                    ).fetchone()
+                if reminder and self.classroom_service:
+                    self.classroom_service.remind_missing(None, reminder["todo_id"], scheduled=True)
+                    with self.queue.db.connect() as conn:
+                        conn.execute(
+                            "UPDATE todo_reminders SET status = 'sent' WHERE id = ?", (job["ref_id"],)
+                        )
             else:
                 raise ValueError(f"未知任务类型: {job['kind']}")
             self.queue.finish(job["id"])

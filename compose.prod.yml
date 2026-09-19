@@ -1,0 +1,97 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: activity
+      POSTGRES_USER: activity
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U activity"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env.production
+        required: false
+    environment: &app_env
+      DATABASE_URL: postgresql+psycopg://activity:${POSTGRES_PASSWORD}@postgres:5432/activity
+      ENVIRONMENT: production
+      COOKIE_SECURE: "true"
+      PUBLIC_BASE_URL: https://${DOMAIN}
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    volumes:
+      - uploads_data:/app/data/uploads
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    env_file:
+      - path: .env.production
+        required: false
+    environment: *app_env
+    volumes:
+      - uploads_data:/app/data/uploads
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  scheduler:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "app.scheduler.runner"]
+    env_file:
+      - path: .env.production
+        required: false
+    environment: *app_env
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  qq-gateway:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - .:/app:ro
+    command: ["sh", "-c", "npm ci && npm run qq-gateway"]
+    env_file:
+      - path: .env.production
+        required: false
+    environment:
+      QQ_GATEWAY_BACKEND_URL: http://api:8000
+    depends_on:
+      api: {condition: service_healthy}
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api: {condition: service_healthy}
+
+volumes:
+  postgres_data:
+  uploads_data:
+  caddy_data:
+  caddy_config:

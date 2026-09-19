@@ -1,0 +1,35 @@
+.excel-import {
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+}
+
+.template-link {
+  padding: 10px 13px;
+  border: 1px solid #cec5f1;
+  border-radius: 8px;
+  color: var(--violet);
+  text-decoration: none;
+  font-size: 10px;
+}
+
+.file-drop {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px dashed #cfc9d8;
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.file-drop input {
+  max-width: 210px;
+  padding: 0;
+  border: 0;
+}
+
+@media (max-width: 850px) {
+  .excel-import { grid-template-columns: 1fr; }
+}

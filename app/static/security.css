@@ -1,0 +1,31 @@
+.privacy-check {
+  display: flex !important;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px !important;
+  font-weight: 400 !important;
+}
+.privacy-check input { width: auto; }
+.privacy-check a, .policy-page a { color: var(--violet); }
+.account-dialog {
+  width: min(430px, 92vw);
+  padding: 30px;
+  border: 0;
+  border-radius: 16px;
+  box-shadow: 0 30px 90px rgba(0,0,0,.22);
+}
+.account-dialog::backdrop { background: rgba(21,18,31,.55); backdrop-filter: blur(3px); }
+.account-dialog h2 { margin-top: 0; font: 500 24px Georgia,"Songti SC",serif; }
+.account-dialog p { color: var(--muted); font-size: 12px; line-height: 1.8; }
+.account-dialog>a { display: block; margin-bottom: 20px; color: var(--violet); font-size: 11px; }
+.account-dialog form { display: grid; gap: 14px; }
+.account-dialog label { display: grid; gap: 6px; font-size: 11px; font-weight: 700; }
+.account-dialog input { padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+.audit-list { display: grid; gap: 0; }
+.audit-list>div { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--line); font-size: 10px; }
+.audit-list span,.audit-list small { color: var(--muted); }
+.text-action { padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--violet); background: #fff; cursor: pointer; font-size: 9px; }
+.policy-page { width: min(760px, calc(100% - 36px)); margin: 0 auto; padding: 50px 0 80px; }
+.policy-page h1 { margin: 30px 0 8px; font: 500 34px Georgia,"Songti SC",serif; }
+.policy-page h2 { margin-top: 28px; font-size: 17px; }
+.policy-page p { color: #625e69; font-size: 13px; line-height: 1.9; }

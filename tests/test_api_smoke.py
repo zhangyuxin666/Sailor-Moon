@@ -1,15 +1,63 @@
 import os
 import tempfile
+import uuid
 
 # 必须在导入 app.main 之前设置，避免使用默认数据库文件
 os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.mkdtemp(), "smoke.db").replace("\\", "/")
+os.environ["LLM_API_KEY"] = ""
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.agent.llm import MockLLMClient  # noqa: E402
 from app.jobs import Worker  # noqa: E402
 from app.main import app, queue, reminders, service  # noqa: E402
 
+service.llm = MockLLMClient()
+service.orchestrator.llm = service.llm
 client = TestClient(app)
+
+
+def test_web_app():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "活动管家" in response.text
+    assert client.get("/static/styles.css").status_code == 200
+    assert client.get("/static/app.js").status_code == 200
+
+
+def test_qq_status_and_public_form(monkeypatch):
+    status = client.get("/integrations/qq/status", params={"user_id": "alice"})
+    assert status.status_code == 200
+    assert isinstance(status.json()["configured"], bool)
+
+    from app.config import settings
+    monkeypatch.setattr(settings, "qq_gateway_token", "test-gateway-token")
+    inbound = client.post(
+        "/internal/qq/events",
+        headers={"X-Gateway-Token": "test-gateway-token"},
+        json={
+            "group_openid": "test-group",
+            "sender_openid": "test-member",
+            "content": "你是什么",
+            "message_id": f"test-message-{uuid.uuid4().hex}",
+        },
+    )
+    assert inbound.status_code == 200
+    assert "活动管家" in inbound.json()["reply"]
+
+    queued = client.post(
+        "/activities",
+        json={"user_id": "form-owner", "text": "公开报名测试", "publish_to_qq": False},
+    ).json()
+    assert Worker(queue, service, reminders).run_once()
+    detail = client.get(
+        f"/activities/{queued['activity_id']}", params={"user_id": "form-owner"}
+    ).json()
+    form_id = detail["forms"][0]["id"]
+    assert client.get(f"/forms/{form_id}").status_code == 200
+    form_data = client.get(f"/public/forms/{form_id}").json()
+    assert form_data["id"] == form_id
+    assert form_data["activity_title"]
 
 
 def test_api_smoke():

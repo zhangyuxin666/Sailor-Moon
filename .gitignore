@@ -4,3 +4,8 @@ __pycache__/
 .env
 *.db
 .pytest_cache/
+*.log
+node_modules/
+data/uploads/
+backups/
+.env.production

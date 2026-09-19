@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>班级工作台 · 活动管家</title>
+  <link rel="stylesheet" href="/static/portal.css">
+  <link rel="stylesheet" href="/static/excel-import.css">
+  <link rel="stylesheet" href="/static/security.css">
+</head>
+<body>
+  <div class="portal-shell">
+    <aside class="portal-sidebar">
+      <a class="portal-brand" href="/portal"><span>活</span><strong>活动管家</strong></a>
+      <nav><a class="active" href="#overview">总览</a><a href="#todos">待办事项</a><a id="memberNav" href="#members">成员管理</a><a href="/activity">AI 活动助手</a></nav>
+      <div class="portal-user"><div id="userAvatar">A</div><span><strong id="userName">加载中</strong><small id="userRole"></small></span></div>
+      <button id="logoutButton" class="logout-button">退出登录</button>
+      <button id="passwordButton" class="logout-button">修改密码</button>
+    </aside>
+    <main class="portal-main">
+      <header class="portal-header"><div><p class="portal-eyebrow">CLASSROOM DASHBOARD</p><h1 id="pageTitle">班级工作台</h1></div><button id="refreshButton" class="outline-button">刷新数据</button></header>
+      <section id="overview" class="portal-metrics"></section>
+      <section id="managerActions" class="manager-actions hidden">
+        <article id="classCreator" class="portal-panel hidden">
+          <div class="panel-heading"><div><p class="portal-eyebrow">FIRST STEP</p><h2>创建班级</h2></div></div>
+          <form id="classForm" class="inline-form"><input id="className" placeholder="例如：软件工程 5 班" required><button>创建班级</button></form>
+        </article>
+        <article id="members" class="portal-panel">
+          <div class="panel-heading"><div><p class="portal-eyebrow">MEMBERS</p><h2>录入班级成员</h2></div><span id="currentClassLabel"></span></div>
+          <p class="panel-help">下载模板填写“学号、姓名、登录名、初始密码”，保存后直接上传。</p>
+          <form id="rosterForm" class="excel-import"><a class="template-link" href="/classes/member-template.xlsx">下载 Excel 模板</a><label class="file-drop"><input id="rosterFile" name="file" type="file" accept=".xlsx" required><span>选择填写好的 Excel 文件</span></label><button class="primary-action">导入成员账号</button></form>
+        </article>
+        <article class="portal-panel">
+          <div class="panel-heading"><div><p class="portal-eyebrow">NEW TODO</p><h2>发布作业或待办</h2></div></div>
+          <form id="todoForm" class="todo-form"><input id="todoTitle" placeholder="标题，例如：提交实验报告" required><select id="todoKind"><option value="homework">作业收集</option><option value="task">班级待办</option></select><input id="todoDeadline" type="datetime-local" required><textarea id="todoDescription" rows="3" placeholder="要求、文件格式、注意事项"></textarea><button class="primary-action">发布给全班</button></form>
+        </article>
+      </section>
+      <section id="todos" class="portal-panel todo-board">
+        <div class="panel-heading"><div><p class="portal-eyebrow">TODO BOARD</p><h2 id="todoSectionTitle">待办事项</h2></div><select id="todoFilter"><option value="all">全部</option><option value="pending">未完成</option><option value="done">已完成</option></select></div>
+        <div id="todoList" class="portal-todo-list"></div>
+      </section>
+      <section id="auditPanel" class="portal-panel hidden"><div class="panel-heading"><div><p class="portal-eyebrow">AUDIT</p><h2>最近操作记录</h2></div><button id="loadAudit" class="outline-button">刷新</button></div><div id="auditList" class="audit-list"></div></section>
+    </main>
+  </div>
+  <dialog id="todoDialog" class="todo-dialog"><button class="dialog-close" data-close>×</button><div id="todoDialogContent"></div></dialog>
+  <dialog id="privacyDialog" class="account-dialog"><h2>请确认隐私政策</h2><p>继续使用前，请阅读隐私政策与用户协议。平台将保存你的账号、任务状态和主动提交的文件。</p><a href="/privacy" target="_blank">查看完整政策</a><button id="acceptPrivacyButton" class="primary-action">同意并继续</button></dialog>
+  <dialog id="passwordDialog" class="account-dialog"><button class="dialog-close" data-password-close>×</button><h2>修改密码</h2><form id="passwordForm"><label>当前密码<input name="current_password" type="password" required></label><label>新密码<input name="new_password" type="password" minlength="8" required></label><button class="primary-action">保存新密码</button></form></dialog>
+  <div id="portalToast" class="portal-toast"></div>
+  <script src="/static/portal.js" defer></script>
+</body>
+</html>

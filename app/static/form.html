@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>活动报名</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="public-form-page">
+  <main class="public-form-shell">
+    <div class="public-form-brand"><span class="brand-mark">活</span><strong>活动管家</strong></div>
+    <section class="public-form-card">
+      <p class="eyebrow">EVENT REGISTRATION</p>
+      <h1 id="formActivityTitle">活动报名</h1>
+      <p id="formDescription" class="form-description">正在载入活动信息…</p>
+      <div id="formTime" class="form-time"></div>
+      <form id="publicRegistrationForm">
+        <label>姓名<input id="publicName" required placeholder="请输入姓名"></label>
+        <label>联系方式<input id="publicContact" required placeholder="手机号或 QQ"></label>
+        <div id="extraFields"></div>
+        <button class="primary-button" type="submit">确认报名 <b>→</b></button>
+      </form>
+      <div id="formSuccess" class="form-success hidden"><span>✓</span><h2>报名成功</h2><p>活动负责人已收到你的报名信息。</p></div>
+    </section>
+  </main>
+  <script>
+    const formId = location.pathname.split('/').filter(Boolean).pop();
+    const formatDate = value => value ? new Intl.DateTimeFormat('zh-CN', {dateStyle:'full', timeStyle:'short'}).format(new Date(value)) : '时间待定';
+    const escapeHtml = value => { const node = document.createElement('div'); node.textContent = String(value ?? ''); return node.innerHTML; };
+    fetch(`/public/forms/${formId}`).then(response => response.json()).then(data => {
+      document.title = `${data.activity_title} · 活动报名`;
+      document.querySelector('#formActivityTitle').textContent = data.activity_title;
+      document.querySelector('#formDescription').textContent = data.description;
+      document.querySelector('#formTime').textContent = `◷ ${formatDate(data.event_time)}`;
+      const fields = (data.fields || []).filter(field => !['name','contact'].includes(field.name));
+      document.querySelector('#extraFields').innerHTML = fields.map(field => {
+        if (field.type === 'select') return `<label>${escapeHtml(field.label)}<select name="${escapeHtml(field.name)}" ${field.required ? 'required' : ''}><option value="">请选择</option>${(field.options || []).map(option => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`).join('')}</select></label>`;
+        return `<label>${escapeHtml(field.label)}<input name="${escapeHtml(field.name)}" ${field.required ? 'required' : ''}></label>`;
+      }).join('');
+    });
+    document.querySelector('#publicRegistrationForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const extra = Object.fromEntries(new FormData(event.target).entries());
+      const response = await fetch(`/forms/${formId}/registrations`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:document.querySelector('#publicName').value, contact:document.querySelector('#publicContact').value, extra})});
+      if (!response.ok) return alert('报名失败，请稍后重试');
+      event.target.classList.add('hidden');
+      document.querySelector('#formSuccess').classList.remove('hidden');
+    });
+  </script>
+</body>
+</html>

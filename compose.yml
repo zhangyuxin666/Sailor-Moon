@@ -35,5 +35,16 @@ services:
     environment: *app_env
     depends_on:
       postgres: {condition: service_healthy}
+  qq-gateway:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: ["sh", "-c", "npm ci && npm run qq-gateway"]
+    env_file: .env
+    environment:
+      QQ_GATEWAY_BACKEND_URL: http://api:8000
+    depends_on:
+      api: {condition: service_started}
 volumes:
   postgres_data:

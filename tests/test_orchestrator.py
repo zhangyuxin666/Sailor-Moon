@@ -36,12 +36,14 @@ def test_full_flow_from_one_sentence(service, db):
 def test_registration_and_stats(service):
     detail = service.create_activity_from_text("alice", "班级秋游")
     form_id = detail["forms"][0]["id"]
-    service.submit_registration(form_id, "小明", "13800000000", {})
+    assert detail["plan"]["form_fields"]
+    service.submit_registration(form_id, "小明", "13800000000", {"attendance": "是"})
     service.submit_registration(form_id, "小红", "13900000000", {})
 
     stats = service.form_stats("alice", detail["activity"]["id"])
     assert stats["count"] == 2
     assert {r["name"] for r in stats["registrations"]} == {"小明", "小红"}
+    assert stats["registrations"][0]["extra"]["attendance"] == "是"
 
 
 def test_recap(service):

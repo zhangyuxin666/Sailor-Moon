@@ -85,6 +85,45 @@ class ReminderService:
                 self._add_job(row["id"], remind_at)
             else:
                 self._enqueue(row["id"])
+        with self.db.connect() as conn:
+            todo_rows = conn.execute(
+                "SELECT * FROM todo_reminders WHERE status = 'scheduled'"
+            ).fetchall()
+        for row in todo_rows:
+            remind_at = datetime.fromisoformat(row["remind_at"])
+            if remind_at > datetime.now():
+                self._add_todo_job(row["id"], remind_at)
+            else:
+                self._enqueue_todo(row["id"])
+
+    def schedule_todo(self, conn, todo_id: str, remind_at: datetime) -> dict:
+        row = conn.execute(
+            "SELECT * FROM todo_reminders WHERE todo_id = ? AND remind_at = ? AND status = 'scheduled'",
+            (todo_id, remind_at.isoformat()),
+        ).fetchone()
+        if row:
+            return dict(row)
+        reminder_id = uuid.uuid4().hex[:12]
+        now = datetime.now().isoformat()
+        conn.execute(
+            "INSERT INTO todo_reminders (id, todo_id, remind_at, status, created_at) VALUES (?, ?, ?, 'scheduled', ?)",
+            (reminder_id, todo_id, remind_at.isoformat(), now),
+        )
+        if remind_at > datetime.now():
+            self._add_todo_job(reminder_id, remind_at)
+        else:
+            self._enqueue_todo(reminder_id)
+        return {"id": reminder_id, "todo_id": todo_id, "remind_at": remind_at.isoformat(), "status": "scheduled"}
+
+    def _add_todo_job(self, reminder_id: str, remind_at: datetime):
+        self.scheduler.add_job(
+            self._enqueue_todo, "date", run_date=remind_at, args=[reminder_id],
+            id=f"todo:{reminder_id}", replace_existing=True,
+        )
+
+    def _enqueue_todo(self, reminder_id: str):
+        if self.queue is not None:
+            self.queue.enqueue("todo_reminder", reminder_id)
 
     def _add_job(self, reminder_id: str, remind_at: datetime):
         self.scheduler.add_job(
@@ -106,12 +145,24 @@ class ReminderService:
             if not row:
                 return  # 已取消或已发送
             ctx = ToolContext(conn=conn, activity_id=row["activity_id"])
-            get_tool("send_message").execute(
-                ctx,
-                idempotency_key=f"reminder:{reminder_id}",
-                recipient="all",
-                content=row["message"],
-            )
+            channel = conn.execute(
+                "SELECT group_openid FROM activity_channels WHERE activity_id = ?", (row["activity_id"],)
+            ).fetchone()
+            if channel:
+                get_tool("send_qq_group_message").execute(
+                    ctx,
+                    idempotency_key=f"reminder:{reminder_id}",
+                    group_openid=channel["group_openid"],
+                    content=row["message"],
+                    kind="reminder",
+                )
+            else:
+                get_tool("send_message").execute(
+                    ctx,
+                    idempotency_key=f"reminder:{reminder_id}",
+                    recipient="all",
+                    content=row["message"],
+                )
             conn.execute(
                 "UPDATE reminders SET status = 'sent' WHERE id = ?", (reminder_id,)
             )

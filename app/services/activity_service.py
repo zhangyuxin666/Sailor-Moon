@@ -7,6 +7,8 @@ from ..agent.orchestrator import Orchestrator
 from ..core.exceptions import NotFoundError
 from ..core.permissions import check_activity_owner
 from ..scheduler.reminders import ReminderService
+from ..tools.registry import configure_tools
+from ..integrations.qq import QQBotService
 
 
 class ActivityService:
@@ -18,8 +20,13 @@ class ActivityService:
         self.reminders = reminders
         self.orchestrator = Orchestrator(db, llm, reminders)
         self.queue = queue
+        configure_tools(db)
+        self.qq = QQBotService(db)
 
-    def queue_activity(self, user_id: str, text: str) -> dict:
+    def queue_activity(
+        self, user_id: str, text: str, publish_to_qq: bool = True,
+        class_id: str | None = None, workflow_config: dict | None = None,
+    ) -> dict:
         """创建活动并提交持久化后台任务，供 HTTP API 使用。"""
         if self.queue is None:
             raise RuntimeError("未配置后台任务队列")
@@ -30,8 +37,56 @@ class ActivityService:
                 "VALUES (?, ?, ?, ?, 'queued', ?)",
                 (activity_id, user_id, text[:20], text, datetime.now().isoformat()),
             )
+            group_openid = None
+            if class_id:
+                classroom = conn.execute(
+                    "SELECT c.qq_group_openid, co.organization_id FROM classes c "
+                    "JOIN class_organizations co ON co.class_id = c.id WHERE c.id = ?",
+                    (class_id,),
+                ).fetchone()
+                if not classroom:
+                    raise NotFoundError("班级不存在")
+                conn.execute(
+                    "INSERT INTO activity_classes (activity_id, class_id, organization_id) VALUES (?, ?, ?)",
+                    (activity_id, class_id, classroom["organization_id"]),
+                )
+                if workflow_config:
+                    conn.execute(
+                        "INSERT INTO activity_workflows (activity_id, config_json) VALUES (?, ?)",
+                        (activity_id, json.dumps(workflow_config, ensure_ascii=False)),
+                    )
+                if publish_to_qq and classroom["qq_group_openid"]:
+                    group_openid = classroom["qq_group_openid"]
+                    conn.execute(
+                        "INSERT INTO activity_channels (activity_id, user_id, group_openid, created_at) VALUES (?, ?, ?, ?)",
+                        (activity_id, user_id, group_openid, datetime.now().isoformat()),
+                    )
+            elif publish_to_qq:
+                group_openid = self.qq.attach_activity(conn, user_id, activity_id)
         job = self.queue.enqueue("activity", activity_id)
-        return {"activity_id": activity_id, "run_id": job["id"], "status": job["status"]}
+        return {
+            "activity_id": activity_id,
+            "run_id": job["id"],
+            "status": job["status"],
+            "qq_group_attached": bool(group_openid),
+        }
+
+    def list_activities(self, user_id: str, class_ids: list[str] | None = None) -> list[dict]:
+        with self.db.connect() as conn:
+            if class_ids:
+                items = []
+                for class_id in class_ids:
+                    rows = conn.execute(
+                        "SELECT a.*, ac.class_id FROM activities a JOIN activity_classes ac ON ac.activity_id = a.id "
+                        "WHERE ac.class_id = ? ORDER BY a.created_at DESC",
+                        (class_id,),
+                    ).fetchall()
+                    items.extend(dict(row) for row in rows)
+                return sorted(items, key=lambda item: item["created_at"], reverse=True)
+            return [dict(row) for row in conn.execute(
+                "SELECT * FROM activities WHERE user_id = ? ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()]
 
     def run_queued_activity(self, activity_id: str) -> dict:
         """Worker 入口：读取已落库输入并执行活动工作流。"""
@@ -75,6 +130,7 @@ class ActivityService:
                 "forms": fetch("SELECT * FROM forms WHERE activity_id = ?"),
                 "reminders": fetch("SELECT * FROM reminders WHERE activity_id = ?"),
                 "steps": fetch("SELECT * FROM steps WHERE activity_id = ? ORDER BY id"),
+                "deliveries": fetch("SELECT * FROM delivery_events WHERE activity_id = ? ORDER BY created_at DESC"),
             }
 
     def submit_registration(self, form_id: str, name: str, contact: str, extra: dict) -> dict:
@@ -98,14 +154,19 @@ class ActivityService:
             if not form:
                 raise NotFoundError("该活动还没有报名问卷")
             rows = conn.execute(
-                "SELECT name, contact, created_at FROM registrations WHERE form_id = ? ORDER BY id",
+                "SELECT name, contact, extra_json, created_at FROM registrations WHERE form_id = ? ORDER BY id",
                 (form["id"],),
             ).fetchall()
+            registrations = []
+            for row in rows:
+                item = dict(row)
+                item["extra"] = json.loads(item.pop("extra_json") or "{}")
+                registrations.append(item)
             return {
                 "form_id": form["id"],
                 "title": form["title"],
                 "count": len(rows),
-                "registrations": [dict(r) for r in rows],
+                "registrations": registrations,
             }
 
     def generate_recap(self, user_id: str, activity_id: str) -> dict:

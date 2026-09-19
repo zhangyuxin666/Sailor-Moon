@@ -23,13 +23,17 @@ class CreateFormTool(Tool):
             "required": ["title"],
         }
 
-    def run(self, ctx: ToolContext, title: str) -> dict:
+    def run(self, ctx: ToolContext, title: str, fields: list[dict] | None = None) -> dict:
         form_id = uuid.uuid4().hex[:12]
+        all_fields = DEFAULT_FIELDS + [
+            field for field in (fields or [])
+            if field.get("name") not in {"name", "contact"}
+        ]
         ctx.conn.execute(
             "INSERT INTO forms (id, activity_id, title, fields_json, created_at) VALUES (?, ?, ?, ?, ?)",
-            (form_id, ctx.activity_id, title, json.dumps(DEFAULT_FIELDS, ensure_ascii=False), datetime.now().isoformat()),
+            (form_id, ctx.activity_id, title, json.dumps(all_fields, ensure_ascii=False), datetime.now().isoformat()),
         )
-        return {"form_id": form_id, "title": title}
+        return {"form_id": form_id, "title": title, "fields": all_fields}
 
 
 class FormStatsTool(Tool):

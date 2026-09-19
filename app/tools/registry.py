@@ -1,14 +1,23 @@
 from .calendar_tool import CreateCalendarEventTool
 from .form_tool import CreateFormTool, FormStatsTool
 from .message_tool import SendMessageTool
+from .qq_tool import SendQQGroupMessageTool
 
-TOOLS = {
-    t.name: t
-    for t in [SendMessageTool(), CreateFormTool(), FormStatsTool(), CreateCalendarEventTool()]
-}
+TOOLS = {}
+
+
+def configure_tools(db):
+    tools = [
+        SendMessageTool(), CreateFormTool(), FormStatsTool(), CreateCalendarEventTool(),
+        SendQQGroupMessageTool(db),
+    ]
+    TOOLS.clear()
+    TOOLS.update({tool.name: tool for tool in tools})
 
 
 def get_tool(name: str):
+    if not TOOLS:
+        raise RuntimeError("工具注册表尚未初始化")
     return TOOLS[name]
 
 

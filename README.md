@@ -52,11 +52,58 @@ source .venv/Scripts/activate   # Windows Git Bash；PowerShell 用 .venv\Script
 pip install -r requirements.txt
 cp .env.example .env            # 可选，不配也能跑（离线 Mock）
 
-uvicorn app.main:app --reload   # 终端 1：API
+uvicorn app.main:app --reload --port 8001  # 终端 1：网页 + API（8000 被占用时使用 8001）
 python -m app.worker            # 终端 2：后台任务
 python -m app.scheduler.runner  # 终端 3：提醒调度
+npm install                    # 首次安装 QQ 官方 Node.js SDK
+npm run qq-gateway             # 终端 4：QQ 官方机器人网关
 python -m pytest tests/ -v      # 运行测试
 ```
+
+启动后访问 `http://127.0.0.1:8001/` 使用中文可视化界面；开发者接口文档位于
+`http://127.0.0.1:8001/docs`。
+
+首次访问会进入初始化页面：创建第一个管理者账号后，管理者可以创建班级、批量录入
+参与者账号、发布作业/待办、查看全班完成情况，并立即或定时通过 QQ 群提醒未完成人员。
+参与者使用管理者分配的账号登录，可以查看自己的待办并上传文件或填写完成说明。
+原 AI 活动策划工作区保留在 `http://127.0.0.1:8001/activity`。
+
+管理者也可以进入 `http://127.0.0.1:8001/agent`，用自然语言描述班级事务。Agent 会先判断
+意图和复杂度，生成可编辑草案与建议流程；只有管理者确认后才发布。收作业等简单任务只创建
+作业与提交入口，通知只发送消息，信息收集只创建表单，复杂活动才启用策划、报名、分工、
+日历和定时提醒。
+
+主要页面彼此独立：
+
+- `/portal`：总览
+- `/agent`：需求理解、草案修改与确认发布
+- `/assignments`：作业、待办与提交统计
+- `/activity`：复杂活动监控与复盘
+- `/members`：Excel 成员导入与账号管理
+- `/settings`：账号、QQ 连接、隐私和审计日志
+
+## QQ 官方机器人接入
+
+1. 在 [QQ 开放平台](https://q.qq.com/) 创建机器人，将 `AppID` 和 `AppSecret` 填入 `.env`。
+2. 启动 `npm run qq-gateway`，把机器人添加到用于组织活动的 QQ 群。
+3. 网页顶部会显示六位绑定码，在群里 `@机器人` 发送 `绑定 123456`。
+4. 绑定成功后，从网页发起活动会自动向该群发送活动方案、分工和公开报名链接；定时提醒与手动催办也会走 QQ。
+
+手机需要能访问报名链接。仅在本机演示时可使用默认 `PUBLIC_BASE_URL`；需要群成员报名时，
+请将它设置为已部署的 HTTPS 域名，或同一局域网中可访问的电脑 IP 地址。
+
+## 生产部署
+
+1. 将 `.env.production.example` 复制为 `.env.production`，填写域名、随机数据库密码、模型密钥和 QQ 机器人密钥。
+2. 将域名解析到服务器公网 IP，开放 TCP 80/443 端口。
+3. 运行 `docker compose --env-file .env.production -f compose.prod.yml up -d --build`。
+4. Caddy 会自动申请并续期 HTTPS 证书；API、Worker、Scheduler、QQ 网关和 PostgreSQL 均配置了自动重启。
+5. 使用 `powershell -File scripts/backup.ps1` 备份数据库与本地上传文件，并定期验证恢复。
+
+公开使用前必须在 QQ 开放平台重置已经暴露过的 `AppSecret`。生产环境推荐把
+`STORAGE_BACKEND` 改为 `s3`，避免作业文件仅存在单台服务器。平台包含组织隔离、
+登录限流、安全 Cookie、来源校验、文件类型/大小/配额限制、隐私同意、个人数据导出、
+参与者注销和关键操作审计；短信/邮箱找回密码仍需接入第三方服务商后才能启用。
 
 ## API 示例
 
@@ -88,6 +135,7 @@ curl -o activity.ics "http://127.0.0.1:8000/activities/{activity_id}/calendar.ic
 ```
 
 完整接口契约见 `docs/API.md`，四人职责见 `docs/TEAM.md`。部署 PostgreSQL、API、Worker 和 Scheduler 可运行 `docker compose up --build`。
+重新梳理后的角色、业务流程、工程约束与验收标准见 `docs/REQUIREMENTS.md`。
 
 ## 目录结构
 
