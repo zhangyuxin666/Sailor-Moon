@@ -15,6 +15,7 @@ services:
       retries: 10
   api:
     build: .
+    env_file: .env
     environment: &app_env
       DATABASE_URL: postgresql+psycopg://activity:activity@postgres:5432/activity
     ports: ["8000:8000"]
@@ -23,12 +24,14 @@ services:
   worker:
     build: .
     command: ["python", "-m", "app.worker"]
+    env_file: .env
     environment: *app_env
     depends_on:
       postgres: {condition: service_healthy}
   scheduler:
     build: .
     command: ["python", "-m", "app.scheduler.runner"]
+    env_file: .env
     environment: *app_env
     depends_on:
       postgres: {condition: service_healthy}
