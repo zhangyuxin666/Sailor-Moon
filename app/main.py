@@ -56,6 +56,19 @@ static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
+def app_page(filename: str):
+    # Authenticated and unauthenticated pages can share the same URL (notably
+    # "/"). Never let the browser reuse an HTML response from another session.
+    return FileResponse(
+        static_dir / filename,
+        headers={
+            "Cache-Control": "no-store, max-age=0",
+            "Pragma": "no-cache",
+            "Vary": "Cookie",
+        },
+    )
+
+
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
     if request.method in {"POST", "PUT", "PATCH", "DELETE"} and request.cookies.get(SESSION_COOKIE):
@@ -83,20 +96,28 @@ async def security_middleware(request: Request, call_next):
 @app.get("/", include_in_schema=False)
 def web_app(request: Request):
     account = get_current_account(db, request, required=False)
-    return FileResponse(static_dir / ("dashboard.html" if account else "login.html"))
+    destination = "/portal" if account else "/login"
+    return RedirectResponse(destination, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/login", include_in_schema=False)
+def login_page(request: Request):
+    if get_current_account(db, request, required=False):
+        return RedirectResponse("/portal", headers={"Cache-Control": "no-store"})
+    return app_page("login.html")
 
 
 @app.get("/portal", include_in_schema=False)
 def portal(request: Request):
     if not get_current_account(db, request, required=False):
-        return RedirectResponse("/")
-    return FileResponse(static_dir / "dashboard.html")
+        return RedirectResponse("/login", headers={"Cache-Control": "no-store"})
+    return app_page("dashboard.html")
 
 
 def protected_page(request: Request, filename: str):
     if not get_current_account(db, request, required=False):
-        return RedirectResponse("/")
-    return FileResponse(static_dir / filename)
+        return RedirectResponse("/login", headers={"Cache-Control": "no-store"})
+    return app_page(filename)
 
 
 @app.get("/agent", include_in_schema=False)
@@ -122,8 +143,8 @@ def settings_page(request: Request):
 @app.get("/activity", include_in_schema=False)
 def activity_workspace(request: Request):
     if not get_current_account(db, request, required=False) and not settings.allow_legacy_api:
-        return RedirectResponse("/")
-    return FileResponse(static_dir / "index.html")
+        return RedirectResponse("/login", headers={"Cache-Control": "no-store"})
+    return app_page("index.html")
 
 
 @app.get("/privacy", include_in_schema=False)

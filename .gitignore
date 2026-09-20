@@ -9,3 +9,4 @@ node_modules/
 data/uploads/
 backups/
 .env.production
+.run/

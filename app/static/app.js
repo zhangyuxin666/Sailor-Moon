@@ -340,7 +340,7 @@ $("#activityHistory").addEventListener("change", event => {
 
 async function initializeWorkspace() {
   const auth = await api("/auth/status");
-  if (!auth.account) return location.replace("/");
+  if (!auth.account) return location.replace("/login");
   if (auth.account.role !== "manager") return location.replace("/portal");
   state.account = auth.account;
   state.userId = auth.account.username;

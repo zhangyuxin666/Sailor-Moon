@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from datetime import datetime, timedelta
 
@@ -7,6 +8,8 @@ import httpx
 from ..config import settings
 from ..models.schemas import ActivityPlan, FormField, TaskItem, WorkDraft, WorkflowConfig
 from . import prompts
+
+logger = logging.getLogger(__name__)
 
 
 class LLMClient:
@@ -91,6 +94,37 @@ workflow 字段包含 create_plan、create_form、assign_tasks、create_calendar
 规则：收作业/收文件属于 assignment+simple，只需发布、提交、统计与必要提醒，assign_tasks=false；单纯通知属于 notice+simple；只收集信息属于 survey+standard；真正的线下/线上活动才属于 activity，按需要启用问卷、分工、日历和提醒。缺失的信息可以合理推断，但把需要用户确认的内容写进 missing_information。"""
         content = self._chat(system, f"班级信息：{class_context}\n用户需求：{raw_input}")
         return WorkDraft(**json.loads(_extract_json(content)))
+
+
+class FallbackLLMClient(LLMClient):
+    """Use the offline rules when the configured remote model is unavailable."""
+
+    def __init__(self, primary: LLMClient, fallback: LLMClient):
+        self.primary = primary
+        self.fallback = fallback
+
+    def _call(self, method: str, *args):
+        try:
+            return getattr(self.primary, method)(*args)
+        except Exception as exc:
+            logger.warning(
+                "Remote LLM %s failed (%s); using offline fallback",
+                method,
+                type(exc).__name__,
+            )
+            return getattr(self.fallback, method)(*args)
+
+    def generate_plan(self, raw_input: str, available_assignees: list[str] | None = None) -> ActivityPlan:
+        return self._call("generate_plan", raw_input, available_assignees)
+
+    def generate_recap(self, activity_title: str, stats: dict, task_summary: str) -> str:
+        return self._call("generate_recap", activity_title, stats, task_summary)
+
+    def generate_assistant_reply(self, message: str, activity_context: str) -> str:
+        return self._call("generate_assistant_reply", message, activity_context)
+
+    def analyze_work_request(self, raw_input: str, class_context: str) -> WorkDraft:
+        return self._call("analyze_work_request", raw_input, class_context)
 
 
 class MockLLMClient(LLMClient):
@@ -189,7 +223,10 @@ class MockLLMClient(LLMClient):
 def get_llm() -> LLMClient:
     """配置了 API Key 用真实 LLM，否则回退离线 Mock。"""
     if settings.llm_api_key:
-        return OpenAICompatibleClient(
-            settings.llm_api_key, settings.llm_base_url, settings.llm_model
+        return FallbackLLMClient(
+            OpenAICompatibleClient(
+                settings.llm_api_key, settings.llm_base_url, settings.llm_model
+            ),
+            MockLLMClient(),
         )
     return MockLLMClient()

@@ -18,8 +18,15 @@ client = TestClient(app)
 
 
 def test_web_app():
-    response = client.get("/")
+    redirect = client.get("/", follow_redirects=False)
+    assert redirect.status_code in (302, 307)
+    assert redirect.headers["location"] == "/login"
+    assert redirect.headers["cache-control"] == "no-store"
+
+    response = client.get("/login")
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, max-age=0"
+    assert response.headers["vary"] == "Cookie"
     assert "活动管家" in response.text
     assert client.get("/static/styles.css").status_code == 200
     assert client.get("/static/app.js").status_code == 200

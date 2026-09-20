@@ -46,6 +46,10 @@
 
 ## 快速开始
 
+Windows 用户可直接双击项目根目录的 `start.bat`。脚本会在首次运行时自动创建虚拟环境、安装依赖、补齐 `.env`，启动 API、Worker 和 Scheduler，并打开浏览器；配置 QQ 密钥后还会自动启动 QQ 网关。运行窗口中按 `Ctrl+C` 可关闭全部服务。
+
+也可以在终端中运行 `start.bat`，用 `start.bat -Port 8002` 指定其他端口，或用 `start.bat -NoBrowser` 禁止自动打开浏览器。
+
 ```bash
 python -m venv .venv
 source .venv/Scripts/activate   # Windows Git Bash；PowerShell 用 .venv\Scripts\Activate.ps1

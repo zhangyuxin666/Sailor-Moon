@@ -23,7 +23,7 @@ function formatDate(value) {
 
 async function loadDashboard() {
   const auth = await api("/auth/status");
-  if (!auth.account) return location.replace("/");
+  if (!auth.account) return location.replace("/login");
   state.account = auth.account;
   state.dashboard = await api("/portal/dashboard");
   state.currentClassId = state.currentClassId || state.dashboard.classes?.[0]?.id || null;
@@ -108,7 +108,7 @@ $("#rosterForm").addEventListener("submit", async event => { event.preventDefaul
 $("#todoForm").addEventListener("submit", async event => { event.preventDefault(); const body={title:$("#todoTitle").value.trim(),kind:$("#todoKind").value,deadline:new Date($("#todoDeadline").value).toISOString(),description:$("#todoDescription").value.trim()}; try { await api(`/classes/${state.currentClassId}/todos`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); event.target.reset(); await loadDashboard(); toast("已发布给全班并通知 QQ 群"); } catch(error){toast(error.message,true);} });
 $("#todoFilter").addEventListener("change", render);
 $("#refreshButton").addEventListener("click", loadDashboard);
-$("#logoutButton").addEventListener("click", async () => { await api("/auth/logout",{method:"POST"}); location.replace("/"); });
+$("#logoutButton").addEventListener("click", async () => { await api("/auth/logout",{method:"POST"}); location.replace("/login"); });
 $("#passwordButton").addEventListener("click", () => $("#passwordDialog").showModal());
 $("#acceptPrivacyButton").addEventListener("click", async () => { try { await api("/privacy/consent",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({accept:true})}); $("#privacyDialog").close(); state.account.privacy_accepted=true; toast("已记录隐私同意"); } catch(error){toast(error.message,true);} });
 $("#passwordForm").addEventListener("submit", async event => { event.preventDefault(); const form=new FormData(event.target); try { await api("/auth/change-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.fromEntries(form.entries()))}); event.target.reset(); $("#passwordDialog").close(); state.account.force_password_change=0; toast("密码已更新"); } catch(error){toast(error.message,true);} });
@@ -118,4 +118,4 @@ document.addEventListener("click", async event => { const task=event.target.clos
 document.addEventListener("submit", async event => { if(event.target.id!=="submissionForm")return; event.preventDefault(); try { await api(`/todos/${event.target.dataset.todoId}/submit`,{method:"POST",body:new FormData(event.target)}); $("#todoDialog").close(); await loadDashboard(); toast("提交成功"); } catch(error){toast(error.message,true);} });
 function escapeHtml(value){const node=document.createElement("div");node.textContent=String(value??"");return node.innerHTML;}
 async function loadAudit(){try{const data=await api("/audit-logs?limit=50");$("#auditList").innerHTML=data.logs.length?data.logs.map(log=>`<div><strong>${escapeHtml(log.action)}</strong><span>${escapeHtml(log.resource_type||"")} ${escapeHtml(log.resource_id||"")}</span><small>${formatDate(log.created_at)}</small></div>`).join(""):'<p class="portal-empty">暂无操作记录</p>';}catch(error){toast(error.message,true);}}
-loadDashboard().catch(error => { if(error.message.includes("登录")) location.replace("/"); else toast(error.message,true); });
+loadDashboard().catch(error => { if(error.message.includes("登录")) location.replace("/login"); else toast(error.message,true); });
