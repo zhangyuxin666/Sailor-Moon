@@ -140,6 +140,7 @@ curl -o activity.ics "http://127.0.0.1:8000/activities/{activity_id}/calendar.ic
 
 完整接口契约见 `docs/API.md`，四人职责见 `docs/TEAM.md`。部署 PostgreSQL、API、Worker 和 Scheduler 可运行 `docker compose up --build`。
 重新梳理后的角色、业务流程、工程约束与验收标准见 `docs/REQUIREMENTS.md`。
+团队环境、分支、提交、代码、测试和安全约定见 `docs/DEVELOPMENT.md`。
 
 ## 目录结构
 
