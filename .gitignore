@@ -6,7 +6,10 @@ __pycache__/
 .pytest_cache/
 *.log
 node_modules/
+target/
 data/uploads/
 backups/
 .env.production
 .run/
+.idea/
+*.iml

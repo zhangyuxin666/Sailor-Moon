@@ -1,160 +1,158 @@
 # 活动管家（Activity Assistant）
 
-面向学生社团/班级活动组织的 AI Agent 助手：**一句话发起活动，全流程自动跑**。
-自动完成活动策划与物料清单、报名问卷与统计、任务分工派发、活动前定时提醒、活动后复盘总结。
+面向班级和社团的活动协作平台：管理者用自然语言描述事务，系统生成可编辑草案，并在确认后完成作业收集、活动报名、任务分工、QQ 通知、日历提醒和复盘。
 
-## 架构
+## 当前架构
 
-```
-用户一句话需求
-      │
-      ▼
-┌─────────────────────────────────────────────┐
-│ Orchestrator（编排：规划 → 执行 → 交付）       │
-│  1. generate_plan     LLM 生成策划+物料清单    │
-│  2. create_form       生成报名问卷             │
-│  3. assign_tasks      任务派发到人 + 消息通知   │
-│  4. create_calendar   生成日历事件（ICS）      │
-│  5. schedule_reminder 活动前定时提醒           │
-└─────────────────────────────────────────────┘
-      │ 工具调用（统一封装：幂等 + 指数退避重试）
-      ▼
-  send_message / create_form / form_stats / create_calendar_event
-      │
-      ▼
-  SQLite（活动、任务、问卷、报名、提醒、消息、幂等键）
-  APScheduler（定时提醒，支持取消，重启后自动重建）
+```text
+浏览器 ──> Caddy / Spring Boot :8080 ──> PostgreSQL 16 + pgvector
+                         │
+                         ├──> FastAPI AI :8000 ──> DeepSeek/OpenAI-compatible API
+                         │                  └──> pgvector RAG
+                         │
+QQ 群 <──> Node.js QQ Gateway :3000 <──────┘
 ```
 
-- 未配置 `LLM_API_KEY` 时使用离线规则式 `MockLLMClient`，全流程开箱可跑；
-  配置后走 OpenAI 兼容接口（`app/agent/llm.py`）。
-- Mock 工具（消息/表单/日历）只落库 + 打日志，接真实通道时替换对应 `run()` 即可。
+- **Spring Boot**：唯一公网业务入口；负责 React 前端托管、Spring Security、账号/组织/班级、作业、活动、表单、文件、审计、持久化任务队列和定时提醒。
+- **FastAPI**：仅提供带内部令牌的 AI、Agent 推理和 RAG 接口，不承载浏览器业务 API，也不产生业务副作用。
+- **Node.js QQ Gateway**：维持 QQ WebSocket 连接，接收入站事件并提供内部群消息发送接口；业务判断仍在 Spring Boot。
+- **PostgreSQL + pgvector**：唯一数据库。Flyway 创建业务表和 `rag_documents` 向量表。
+- **React 前端**：Vite + React + TypeScript 单页应用，源码位于 `web/`，构建产物 `web/dist` 由 Spring Boot 打包托管（同源，原接口路径不变）。
 
-## 工程化设计
+服务间调用使用 `AI_INTERNAL_TOKEN` 和 `QQ_GATEWAY_TOKEN`。模型未配置时，AI 服务使用确定性的离线规则；未配置嵌入模型时，RAG 使用本地哈希向量作为开发降级方案。
 
-- **幂等**：所有副作用工具执行前查 `idempotency_keys` 表，命中直接返回缓存结果，
-  Agent 重试/重跑不会重复发消息、重复建表单（`app/core/idempotency.py`）。
-- **失败重试**：工具执行统一包指数退避重试，只对 `ToolTransientError` 等可重试异常重试
-  （`app/core/retry.py`、`app/tools/base.py`）。
-- **权限控制**：所有按活动操作的接口在 service 层校验 `user_id` 是否为创建者，
-  越权返回 403（`app/core/permissions.py`）。报名提交是公开接口。
-- **统一数据层**：SQLAlchemy 同时支持本地 SQLite 与部署 PostgreSQL，部署配置见 `compose.yml`。
-- **持久化后台执行**：API 返回执行编号，独立 Worker 执行 Agent 和工具；失败任务自动重试且状态可查询。
-- **提醒可取消**：独立 Scheduler 只投递到期任务，Worker 发送前再次检查状态。
-- **任务进度**：活动创建者可将任务标记为 `pending` 或 `done`，复盘会读取最新进度。
-- **日历下载**：活动创建者可下载已生成的 ICS 文件；未带时区的活动时间按 `TIMEZONE` 解释。
+## 快速启动
 
-## 快速开始
+需要 Docker Desktop。复制配置并启动：
 
-Windows 用户可直接双击项目根目录的 `start.bat`。脚本会在首次运行时自动创建虚拟环境、安装依赖、补齐 `.env`，启动 API、Worker 和 Scheduler，并打开浏览器；配置 QQ 密钥后还会自动启动 QQ 网关。运行窗口中按 `Ctrl+C` 可关闭全部服务。
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+```
 
-也可以在终端中运行 `start.bat`，用 `start.bat -Port 8002` 指定其他端口，或用 `start.bat -NoBrowser` 禁止自动打开浏览器。
+访问 <http://127.0.0.1:8080/>。首次访问会要求创建管理者、组织和登录密码。
 
-```bash
+Windows 也可以双击 `start.bat`，或执行：
+
+```powershell
+start.bat -NoBrowser
+start.bat -Port 8081
+start.bat -WithQq
+```
+
+默认 Compose 启动 PostgreSQL、AI 和 Spring Boot。QQ Gateway 使用可选 profile；在 `.env` 填写 `QQ_BOT_APP_ID`、`QQ_BOT_APP_SECRET` 后，可以运行：
+
+```powershell
+docker compose --profile qq up -d --build
+```
+
+常用检查：
+
+```powershell
+docker compose ps
+docker compose logs -f api ai
+Invoke-RestMethod http://127.0.0.1:8080/health/ready
+Invoke-RestMethod http://127.0.0.1:8000/health/ready
+```
+
+## 本地开发
+
+业务后端要求 JDK 21：
+
+```powershell
+mvn test
+mvn spring-boot:run
+```
+
+AI 服务要求 Python 3.11+：
+
+```powershell
 python -m venv .venv
-source .venv/Scripts/activate   # Windows Git Bash；PowerShell 用 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-cp .env.example .env            # 可选，不配也能跑（离线 Mock）
-
-uvicorn app.main:app --reload --port 8001  # 终端 1：网页 + API（8000 被占用时使用 8001）
-python -m app.worker            # 终端 2：后台任务
-python -m app.scheduler.runner  # 终端 3：提醒调度
-npm install                    # 首次安装 QQ 官方 Node.js SDK
-npm run qq-gateway             # 终端 4：QQ 官方机器人网关
-python -m pytest tests/ -v      # 运行测试
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m uvicorn ai_service.main:app --reload --port 8000
+python -m pytest tests_ai -q
 ```
 
-启动后访问 `http://127.0.0.1:8001/` 使用中文可视化界面；开发者接口文档位于
-`http://127.0.0.1:8001/docs`。
+Node Gateway：
 
-首次访问会进入初始化页面：创建第一个管理者账号后，管理者可以创建班级、批量录入
-参与者账号、发布作业/待办、查看全班完成情况，并立即或定时通过 QQ 群提醒未完成人员。
-参与者使用管理者分配的账号登录，可以查看自己的待办并上传文件或填写完成说明。
-原 AI 活动策划工作区保留在 `http://127.0.0.1:8001/activity`。
+```powershell
+Set-Location qq-gateway
+npm ci
+npm test
+npm run qq-gateway
+```
 
-管理者也可以进入 `http://127.0.0.1:8001/agent`，用自然语言描述班级事务。Agent 会先判断
-意图和复杂度，生成可编辑草案与建议流程；只有管理者确认后才发布。收作业等简单任务只创建
-作业与提交入口，通知只发送消息，信息收集只创建表单，复杂活动才启用策划、报名、分工、
-日历和定时提醒。
+Spring Boot 本机运行时仍需要 PostgreSQL 和 AI 服务。可只启动依赖：
 
-主要页面彼此独立：
+```powershell
+docker compose up -d postgres ai
+$env:SPRING_DATASOURCE_URL="jdbc:postgresql://127.0.0.1:55432/activity"
+mvn spring-boot:run
+```
 
-- `/portal`：总览
-- `/agent`：需求理解、草案修改与确认发布
-- `/assignments`：作业、待办与提交统计
-- `/activity`：复杂活动监控与复盘
-- `/members`：Excel 成员导入与账号管理
-- `/settings`：账号、QQ 连接、隐私和审计日志
+## AI 与 RAG 内部接口
 
-## QQ 官方机器人接入
+以下接口只供 Spring Boot 或受信任的运维任务调用，必须携带 `X-Internal-Token`：
 
-1. 在 [QQ 开放平台](https://q.qq.com/) 创建机器人，将 `AppID` 和 `AppSecret` 填入 `.env`。
-2. 启动 `npm run qq-gateway`，把机器人添加到用于组织活动的 QQ 群。
-3. 网页顶部会显示六位绑定码，在群里 `@机器人` 发送 `绑定 123456`。
-4. 绑定成功后，从网页发起活动会自动向该群发送活动方案、分工和公开报名链接；定时提醒与手动催办也会走 QQ。
+- `POST /internal/ai/plan`：生成结构化活动方案。
+- `POST /internal/ai/analyze-work-request`：识别作业、通知、问卷或复杂活动并生成草案。
+- `POST /internal/ai/recap`：根据数据库提供的真实统计生成复盘。
+- `POST /internal/ai/reply`：结合活动上下文和 RAG 回答 QQ 群问题。
+- `POST /internal/ai/embed`：生成知识文档向量，仅返回计算结果。
+- `POST /internal/rag/search`：按组织隔离执行 pgvector 检索。
 
-手机需要能访问报名链接。仅在本机演示时可使用默认 `PUBLIC_BASE_URL`；需要群成员报名时，
-请将它设置为已部署的 HTTPS 域名，或同一局域网中可访问的电脑 IP 地址。
+知识文档写入统一走 Spring Boot 的 `POST /knowledge/documents`；Spring 校验当前组织和管理者权限、调用 AI 生成向量，然后由 Spring 写入 PostgreSQL。FastAPI 不写业务数据。
+
+示例：
+
+```powershell
+$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+Invoke-RestMethod http://127.0.0.1:8080/auth/login -Method Post -WebSession $session -ContentType application/json -Body '{"username":"manager","password":"your-password"}'
+$body = @{source="安全手册"; content="户外活动必须准备应急联系人"; metadata=@{kind="policy"}} | ConvertTo-Json
+Invoke-RestMethod http://127.0.0.1:8080/knowledge/documents -Method Post -WebSession $session -ContentType application/json -Body $body
+```
+
+生产环境应配置真正的嵌入服务（`EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`），并确保维度与迁移中的 `vector(1536)` 一致。
+
+## 从旧 SQLite 迁移
+
+旧的 `activity.db` 不会被删除。先启动新服务让 Flyway 建表，再执行一次非覆盖式迁移：
+
+```powershell
+python scripts/migrate_sqlite_to_postgres.py activity.db postgresql://activity:activity@127.0.0.1:55432/activity
+```
+
+脚本使用 `ON CONFLICT DO NOTHING`，不会覆盖 PostgreSQL 中已存在的记录。确认数据无误后再自行归档 SQLite 文件。
+本地 Compose 将原有的 `data/uploads` 直接挂载给 Spring Boot，因此旧文件的 `storage_key` 仍可继续读取；生产命名卷迁移需另外复制该目录内容。
 
 ## 生产部署
 
-1. 将 `.env.production.example` 复制为 `.env.production`，填写域名、随机数据库密码、模型密钥和 QQ 机器人密钥。
-2. 将域名解析到服务器公网 IP，开放 TCP 80/443 端口。
-3. 运行 `docker compose --env-file .env.production -f compose.prod.yml up -d --build`。
-4. Caddy 会自动申请并续期 HTTPS 证书；API、Worker、Scheduler、QQ 网关和 PostgreSQL 均配置了自动重启。
-5. 使用 `powershell -File scripts/backup.ps1` 备份数据库与本地上传文件，并定期验证恢复。
-
-公开使用前必须在 QQ 开放平台重置已经暴露过的 `AppSecret`。生产环境推荐把
-`STORAGE_BACKEND` 改为 `s3`，避免作业文件仅存在单台服务器。平台包含组织隔离、
-登录限流、安全 Cookie、来源校验、文件类型/大小/配额限制、隐私同意、个人数据导出、
-参与者注销和关键操作审计；短信/邮箱找回密码仍需接入第三方服务商后才能启用。
-
-## API 示例
-
-```bash
-# 一句话发起活动（返回 202、activity_id 和 run_id）
-curl -X POST http://127.0.0.1:8000/activities \
-  -H "Content-Type: application/json" \
-  -d '{"user_id": "alice", "text": "下周三晚上7点社团招新宣讲会"}'
-
-# 报名（公开接口）
-curl -X POST http://127.0.0.1:8000/forms/{form_id}/registrations \
-  -H "Content-Type: application/json" -d '{"name": "小明", "contact": "13800000000"}'
-
-# 查看报名统计（仅活动创建者）
-curl "http://127.0.0.1:8000/activities/{activity_id}/form-stats?user_id=alice"
-
-# 活动后复盘
-curl -X POST "http://127.0.0.1:8000/activities/{activity_id}/recap?user_id=alice"
-
-# 取消提醒
-curl -X POST "http://127.0.0.1:8000/reminders/{reminder_id}/cancel?user_id=alice"
-
-# 完成任务（任务 ID 可在活动详情的 tasks 中找到）
-curl -X PATCH "http://127.0.0.1:8000/tasks/{task_id}?user_id=alice" \
-  -H "Content-Type: application/json" -d '{"status": "done"}'
-
-# 下载日历事件
-curl -o activity.ics "http://127.0.0.1:8000/activities/{activity_id}/calendar.ics?user_id=alice"
+```powershell
+Copy-Item .env.production.example .env.production
+docker compose --env-file .env.production -f compose.prod.yml up -d --build
 ```
 
-完整接口契约见 `docs/API.md`，四人职责见 `docs/TEAM.md`。部署 PostgreSQL、API、Worker 和 Scheduler 可运行 `docker compose up --build`。
-重新梳理后的角色、业务流程、工程约束与验收标准见 `docs/REQUIREMENTS.md`。
-团队环境、分支、提交、代码、测试和安全约定见 `docs/DEVELOPMENT.md`。
+Caddy 只反向代理 Spring Boot。FastAPI、QQ Gateway 和 PostgreSQL 均不直接暴露公网端口。备份命令：
+
+```powershell
+powershell -File scripts/backup.ps1
+```
 
 ## 目录结构
 
+```text
+src/main/java/                 Spring Boot 业务后端
+src/main/resources/db/         Flyway PostgreSQL/pgvector 迁移
+src/test/java/                 Java 单元测试
+ai_service/                    FastAPI AI、Agent、RAG
+tests_ai/                      AI 服务测试
+qq-gateway/                    Node.js QQ Gateway
+web/                          React + TypeScript + Vite 前端（构建产物 dist 由 Spring Boot 托管）
+docs/DESIGN.md                 前端视觉令牌与组件规范
+scripts/                       启动、备份和 SQLite 迁移工具
+compose.yml                    本地四服务编排
+compose.prod.yml               Caddy + 生产编排
 ```
-app/
-  main.py               FastAPI 入口
-  config.py             环境变量配置
-  models/               SQLite/PostgreSQL 数据层 + Pydantic 模型
-  jobs.py               持久化后台队列
-  worker.py             Agent/工具任务 Worker
-  core/                 幂等、重试、权限、异常
-  tools/                工具基类（幂等+重试封装）与消息/表单/日历工具
-  agent/                LLM 客户端（真实/Mock）、提示词、规划器、编排器
-  scheduler/            APScheduler 提醒调度（可取消、重启重建）
-  services/             业务门面（权限校验入口）
-tests/                  幂等/重试/权限/全流程/提醒/API 冒烟测试
-```
+
+业务 API 见 [docs/API.md](docs/API.md)，开发约定见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。

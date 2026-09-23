@@ -1,50 +1,83 @@
 services:
   postgres:
-    image: postgres:16-alpine
-    ports: ["127.0.0.1:55432:5432"]
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: activity
       POSTGRES_USER: activity
       POSTGRES_PASSWORD: activity
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U activity"]
+      test: ["CMD-SHELL", "pg_isready -U activity -d activity"]
       interval: 5s
       timeout: 3s
-      retries: 10
-  api:
-    build: .
-    env_file: .env
-    environment: &app_env
-      DATABASE_URL: postgresql+psycopg://activity:activity@postgres:5432/activity
-    ports: ["8000:8000"]
-    depends_on:
-      postgres: {condition: service_healthy}
-  worker:
-    build: .
-    command: ["python", "-m", "app.worker"]
-    env_file: .env
-    environment: *app_env
-    depends_on:
-      postgres: {condition: service_healthy}
-  scheduler:
-    build: .
-    command: ["python", "-m", "app.scheduler.runner"]
-    env_file: .env
-    environment: *app_env
-    depends_on:
-      postgres: {condition: service_healthy}
-  qq-gateway:
-    image: node:22-alpine
-    working_dir: /app
-    volumes:
-      - .:/app
-    command: ["sh", "-c", "npm ci && npm run qq-gateway"]
-    env_file: .env
+      retries: 15
+
+  ai:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+    env_file:
+      - path: .env
+        required: false
     environment:
-      QQ_GATEWAY_BACKEND_URL: http://api:8000
+      DATABASE_URL: postgresql://activity:activity@postgres:5432/activity
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-change-this-local-ai-token}
+    ports: ["127.0.0.1:8000:8000"]
     depends_on:
-      api: {condition: service_started}
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/activity
+      SPRING_DATASOURCE_USERNAME: activity
+      SPRING_DATASOURCE_PASSWORD: activity
+      AI_SERVICE_URL: http://ai:8000
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-change-this-local-ai-token}
+      QQ_GATEWAY_URL: http://qq-gateway:3000
+      QQ_GATEWAY_TOKEN: ${QQ_GATEWAY_TOKEN:-change-this-local-token}
+      PUBLIC_BASE_URL: http://127.0.0.1:${APP_PORT:-8080}
+    ports: ["${APP_PORT:-8080}:8080"]
+    volumes: ["./data/uploads:/app/data/uploads"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      ai: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  qq-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    profiles: ["qq"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      QQ_GATEWAY_BACKEND_URL: http://api:8080
+      QQ_GATEWAY_TOKEN: ${QQ_GATEWAY_TOKEN:-change-this-local-token}
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:

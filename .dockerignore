@@ -6,4 +6,8 @@ __pycache__/
 .pytest_cache/
 *.db
 node_modules/
+**/node_modules/
 data/uploads/
+target/
+backups/
+.run/

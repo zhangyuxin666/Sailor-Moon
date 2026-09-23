@@ -1,12 +1,10 @@
 # 四人职责与协作边界
 
-| 成员 | 负责范围 | 主要交付 | 对接边界 |
+| 成员 | 负责范围 | 主要目录 | 对接边界 |
 |---|---|---|---|
-| A：产品与前端 | 页面、交互、前端状态管理、接口联调 | 活动发起、进度、任务、报名、提醒、复盘页面 | 只依赖 `docs/API.md`，不直接访问数据库 |
-| B：Agent 与 RAG（你） | 需求解析、知识入库/检索、带引用策划、编排步骤与复盘提示词 | `app/agent/`、新增 `app/rag/`、检索评测集 | 从数据库读取可信业务数据；通过工具接口产生副作用 |
-| C：业务后端 | 活动/任务/表单/报名服务、身份与权限、API 模型 | `app/services/`、`app/models/schemas.py`、`app/main.py` | 向 A 提供 API；向 B 提供活动上下文和可信身份 |
-| D：基础设施与工具 | PostgreSQL、Worker、调度、幂等重试、消息/日历工具、部署与监控 | `app/models/database.py`、`app/jobs.py`、`app/tools/`、`app/scheduler/`、Compose | 保证 B/C 提交的任务可重试、可查询、可取消 |
+| A：产品与前端 | 页面、交互、前端状态和业务联调 | `web/` | 只调用 Spring Boot 公网 API |
+| B：AI、Agent 与 RAG | 意图解析、策划、复盘、问答、向量检索与评测 | `ai_service/`、`tests_ai/` | 只输出结构化决策或文本，不直接产生业务副作用 |
+| C：Spring 业务后端 | 认证、组织、班级、作业、活动、表单、文件、审计和权限 | `src/main/java/`、`src/test/java/` | 向前端提供 API；向 AI 提供最小可信上下文 |
+| D：基础设施与集成 | PostgreSQL/pgvector、Flyway、任务调度、QQ Gateway、Compose、备份与监控 | `src/main/resources/db/`、`qq-gateway/`、`compose*.yml`、`scripts/` | 确保内部服务隔离、任务可恢复、数据可迁移 |
 
-工作量平衡：每人负责本模块自动化测试和一段演示；A 同时负责用户体验测试，B 负责检索评测，C 负责权限与 API 测试，D 负责故障恢复和部署测试。
-
-合并顺序：先冻结 API 与数据结构；D 提供数据库/Worker，C 完成业务接口，B 接入 RAG 和 Agent，A 完成全流程联调。跨模块字段修改必须同步更新 `docs/API.md`。
+合并顺序：先冻结 API 和 Flyway 结构，再完成 Spring 业务与 AI 内部契约，然后联调 QQ 和前端。跨服务字段变更必须同步更新 `docs/API.md` 和环境变量示例。

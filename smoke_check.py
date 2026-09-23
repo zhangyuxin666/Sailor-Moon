@@ -1,21 +1,29 @@
-"""本地冒烟测试：API 入队，Worker 执行，再查询活动。"""
-import os
-import tempfile
+"""Read-only smoke check for a running Spring Boot business backend."""
 
-os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.mkdtemp(), "smoke.db").replace("\\", "/")
-os.environ["LLM_API_KEY"] = ""
+from __future__ import annotations
 
-from fastapi.testclient import TestClient
-from app.jobs import Worker
-from app.main import app, queue, reminders, service
+import argparse
+import json
+import urllib.request
 
-with TestClient(app) as client:
-    assert client.get("/health").json() == {"status": "ok"}
-    response = client.post("/activities", json={"user_id": "alice", "text": "组织一场班级羽毛球赛"})
-    assert response.status_code == 202, response.text
-    queued = response.json()
-    assert Worker(queue, service, reminders).run_once()
-    assert client.get(f"/runs/{queued['run_id']}", params={"user_id": "alice"}).json()["status"] == "succeeded"
-    detail = client.get(f"/activities/{queued['activity_id']}", params={"user_id": "alice"})
-    assert detail.status_code == 200 and detail.json()["plan"]
+
+def get(base_url: str, path: str):
+    with urllib.request.urlopen(base_url.rstrip("/") + path, timeout=5) as response:
+        return response.status, response.headers.get_content_type(), response.read()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base-url", default="http://127.0.0.1:8080")
+    arguments = parser.parse_args()
+
+    status, _, body = get(arguments.base_url, "/health/ready")
+    assert status == 200 and json.loads(body)["status"] == "ready"
+
+    status, _, body = get(arguments.base_url, "/auth/status")
+    auth = json.loads(body)
+    assert status == 200 and "initialized" in auth and "account" in auth
+
+    status, content_type, body = get(arguments.base_url, "/login")
+    assert status == 200 and content_type == "text/html" and "活动管家" in body.decode("utf-8")
     print("SMOKE TEST PASSED")
