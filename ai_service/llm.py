@@ -2,6 +2,7 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -16,6 +17,33 @@ def _extract_json(value: str) -> dict:
     if not match:
         raise ValueError("模型输出中没有 JSON 对象")
     return json.loads(match.group(0))
+
+
+def _normalize_work_draft(payload: dict) -> dict:
+    normalized = dict(payload)
+    for key in ("description", "deadline", "event_time", "reasoning"):
+        normalized.setdefault(key, "")
+    normalized.setdefault("missing_information", [])
+
+    fields = []
+    for index, item in enumerate(normalized.get("form_fields") or []):
+        field = dict(item) if isinstance(item, dict) else {"label": str(item)}
+        name = str(field.get("name") or "")
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,30}", name):
+            name = f"field_{index + 1}"
+        field["name"] = name
+        field["label"] = str(field.get("label") or f"问题 {index + 1}")
+        field["type"] = field.get("type") if field.get("type") in {"text", "select"} else "text"
+        field["required"] = bool(field.get("required", False))
+        field["options"] = field.get("options") if isinstance(field.get("options"), list) else []
+        fields.append(field)
+    normalized["form_fields"] = fields
+
+    workflow = WorkflowConfig().model_dump()
+    if isinstance(normalized.get("workflow"), dict):
+        workflow.update(normalized["workflow"])
+    normalized["workflow"] = workflow
+    return normalized
 
 
 class AiEngine:
@@ -54,11 +82,24 @@ class AiEngine:
     def analyze(self, raw_input: str, class_context: str, rag_context: str = "") -> WorkDraft:
         if settings.llm_api_key:
             try:
-                system = """你是班级事务规划 Agent。严格输出 JSON，字段：intent_type(assignment/activity/survey/notice)、complexity(simple/standard/complex)、title、summary、description、deadline、event_time、reasoning、missing_information、form_fields、workflow。workflow 包含 create_plan、create_form、assign_tasks、create_calendar、schedule_reminder、publish_message、collect_submission，值为布尔。作业/文件收集使用 assignment；单纯通知用 notice；信息收集用 survey；真正的多人活动才用 activity。"""
-                user = f"班级信息：{class_context}\n用户需求：{raw_input}"
+                system = """你是班级事务规划 Agent。严格输出 JSON，字段：intent_type(assignment/activity/survey/notice)、complexity(simple/standard/complex)、title、summary、description、deadline、event_time、reasoning、missing_information、form_fields、workflow。workflow 包含 create_plan、create_form、assign_tasks、create_calendar、schedule_reminder、publish_message、collect_submission，值为布尔。
+
+意图判断必须按用户的核心目标，而不是按局部关键词：
+1. 举办分享会、班会、讲座、比赛、团建、招新、志愿服务等线下或线上集体事件，一律使用 activity；“报名”“统计人数”只是活动步骤，不能因此判成 survey。
+2. 收作业、报告、文件或逐人完成情况使用 assignment。
+3. 只有核心目标本身是问卷、投票或结构化信息收集时才使用 survey。
+4. 只需要发布一条消息且无需报名、分工或执行流程时使用 notice。
+
+title 必须是 4 至 20 个汉字左右的简短名词短语，例如“AI工具分享会”，不得复制整句需求，不得包含时间、地点、人数或“预计”等说明。summary 用一句话概括目标，description 保留完整要求。出现明确或相对时间时，基于用户提供的当前时间解析为 ISO 8601；活动时间写 event_time，作业截止时间写 deadline。活动若要求报名、分工、日历或提醒，应分别启用对应 workflow。不要输出 JSON 之外的内容。"""
+                now = datetime.now(ZoneInfo("Asia/Shanghai")).replace(microsecond=0).isoformat()
+                user = f"当前时间（Asia/Shanghai）：{now}\n班级信息：{class_context}\n用户需求：{raw_input}"
                 if rag_context:
                     user += f"\n相关知识库：\n{rag_context}"
-                return WorkDraft.model_validate(_extract_json(self._chat(system, user)))
+                payload = _normalize_work_draft(_extract_json(self._chat(system, user)))
+                draft = WorkDraft.model_validate(payload)
+                if draft.intent_type == "activity" and (len(draft.title) > 20 or draft.title.strip() == raw_input.strip()):
+                    draft = draft.model_copy(update={"title": self._fallback_title(raw_input)})
+                return draft
             except Exception as exception:
                 logger.warning("Remote analysis failed; using offline fallback: %s", exception)
         return self._fallback_analyze(raw_input)
@@ -103,33 +144,54 @@ class AiEngine:
     def _fallback_analyze(self, raw_input: str) -> WorkDraft:
         text = raw_input.strip()
         deadline = (datetime.now() + timedelta(days=3)).replace(microsecond=0).isoformat()
+        title = self._fallback_title(text)
         if any(word in text for word in ("作业", "文件", "报告", "材料")):
             return WorkDraft(
-                intent_type="assignment", complexity="simple", title=text[:30], description=text,
+                intent_type="assignment", complexity="simple", title=title, description=text,
                 summary="发布一项全班作业并收集提交，不需要额外分工。", deadline=deadline,
                 reasoning="需求核心是收集每位成员的提交。", missing_information=["请确认截止时间"],
                 workflow=WorkflowConfig(collect_submission=True, publish_message=True),
             )
-        if any(word in text for word in ("问卷", "统计", "收集信息", "报名")):
+        activity_words = ("活动", "分享会", "班会", "讲座", "比赛", "团建", "招新", "志愿", "晚会", "聚餐", "秋游")
+        if any(word in text for word in activity_words):
             return WorkDraft(
-                intent_type="survey", complexity="standard", title=text[:30], description=text,
+                intent_type="activity", complexity="complex", title=title, description=text,
+                summary="生成完整活动方案并执行报名、分工、日历和提醒。", event_time=deadline,
+                reasoning="需求核心是组织多人活动，报名和统计属于活动执行步骤。", missing_information=[],
+                workflow=WorkflowConfig(create_form="报名" in text, assign_tasks=True, create_calendar=True,
+                                        schedule_reminder="提醒" in text, publish_message=True),
+            )
+        if any(word in text for word in ("问卷", "统计", "收集信息", "投票")):
+            return WorkDraft(
+                intent_type="survey", complexity="standard", title=title, description=text,
                 summary="创建信息收集表并发布链接。", reasoning="需求重点是结构化收集信息。",
                 form_fields=[FormField(name="response", label="请填写相关信息", required=True)],
                 workflow=WorkflowConfig(create_form=True, publish_message=True),
             )
         if any(word in text for word in ("通知", "告诉大家", "群里说")):
             return WorkDraft(
-                intent_type="notice", complexity="simple", title=text[:30], description=text,
+                intent_type="notice", complexity="simple", title=title, description=text,
                 summary="向班级群发布一条通知。", reasoning="需求只涉及消息发布。",
                 workflow=WorkflowConfig(create_plan=False, publish_message=True),
             )
         return WorkDraft(
-            intent_type="activity", complexity="complex", title=text[:30], description=text,
+            intent_type="activity", complexity="complex", title=title, description=text,
             summary="生成完整活动方案并执行报名、分工、日历和提醒。", event_time=deadline,
             reasoning="需求包含多人活动组织。", missing_information=["请确认活动时间"],
             workflow=WorkflowConfig(create_form=True, assign_tasks=True, create_calendar=True,
                                     schedule_reminder=True, publish_message=True),
         )
+
+    @staticmethod
+    def _fallback_title(text: str) -> str:
+        for pattern in (
+            r"(?:组织|举办|开展|策划)(?:一次|一场|一个)?([^，。；,;]{2,20}?(?:分享会|班会|讲座|比赛|团建|招新|活动|晚会|聚餐|秋游))",
+            r"([^，。；,;]{2,20}?(?:分享会|班会|讲座|比赛|团建|招新|活动|晚会|聚餐|秋游))",
+        ):
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1).strip()
+        return text[:20] or "未命名事务"
 
     def _attach_tool_intents(self, plan: ActivityPlan) -> ActivityPlan:
         if plan.tool_intents:

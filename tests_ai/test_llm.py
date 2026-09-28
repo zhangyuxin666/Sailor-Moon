@@ -1,4 +1,4 @@
-from ai_service.llm import AiEngine
+from ai_service.llm import AiEngine, _normalize_work_draft
 from ai_service.models import FormField, WorkDraft
 from ai_service.rag import Embeddings
 from ai_service.config import settings
@@ -30,6 +30,35 @@ def test_offline_agent_selects_minimum_assignment_workflow(monkeypatch):
     assert draft.complexity == "simple"
     assert draft.workflow.collect_submission is True
     assert draft.workflow.assign_tasks is False
+
+
+def test_activity_with_registration_is_not_misclassified_as_survey(monkeypatch):
+    monkeypatch.setattr("ai_service.llm.settings.llm_api_key", "")
+    draft = AiEngine().analyze(
+        "下周五下午2点在教学楼A302组织一场AI工具分享会，预计30人参加，需要报名、安排主持和设备，并提前一天提醒。",
+        "软件工程班",
+    )
+    assert draft.intent_type == "activity"
+    assert draft.title == "AI工具分享会"
+    assert draft.workflow.create_form is True
+    assert draft.workflow.assign_tasks is True
+    assert draft.workflow.schedule_reminder is True
+
+
+def test_work_draft_normalizes_provider_form_fields_and_workflow_defaults():
+    payload = _normalize_work_draft({
+        "intent_type": "activity",
+        "complexity": "complex",
+        "title": "AI工具分享会",
+        "summary": "组织一次主题分享活动",
+        "form_fields": [{"name": "是否参加", "label": "是否参加", "type": "radio"}],
+        "workflow": {"create_form": True},
+    })
+    draft = WorkDraft.model_validate(payload)
+    assert draft.form_fields[0].name == "field_1"
+    assert draft.form_fields[0].type == "text"
+    assert draft.workflow.create_form is True
+    assert draft.workflow.publish_message is True
 
 
 def test_local_embedding_is_stable_and_normalized(monkeypatch):
