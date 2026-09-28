@@ -11,12 +11,15 @@ import type { DashboardData, ImportResult, MemberListResponse } from '../types';
 export default function Members() {
   const { showToast } = useToast();
 
-  const { data: dashboard } = useApi<DashboardData>(() =>
+  const { data: dashboard, reload: reloadDashboard } = useApi<DashboardData>(() =>
     api<DashboardData>('/portal/dashboard'),
   );
   const classes = dashboard?.classes ?? [];
 
   const [classId, setClassId] = useState('');
+  const [className, setClassName] = useState('');
+  const [creatingClass, setCreatingClass] = useState(false);
+  const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileFormRef = useRef<HTMLFormElement>(null);
 
@@ -34,13 +37,44 @@ export default function Members() {
 
   const members = memberData?.members ?? [];
 
+  async function handleCreateClass(e: FormEvent) {
+    e.preventDefault();
+    const name = className.trim();
+    if (!name) {
+      showToast('请填写班级名称', 'error');
+      return;
+    }
+    setCreatingClass(true);
+    try {
+      const created = await api<{ id: string; name: string }>('/classes', {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      });
+      setClassName('');
+      setClassId(created.id);
+      await reloadDashboard();
+      showToast(`班级“${created.name}”创建成功`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '创建班级失败', 'error');
+    } finally {
+      setCreatingClass(false);
+    }
+  }
+
   async function handleImport(e: FormEvent) {
     e.preventDefault();
-    if (!classId) return;
+    if (!classId) {
+      showToast('请先创建班级，再导入成员', 'error');
+      return;
+    }
     const file = fileInputRef.current?.files?.[0];
-    if (!file) return;
+    if (!file) {
+      showToast('请先选择填写好的 .xlsx 文件', 'error');
+      return;
+    }
     const body = new FormData();
     body.append('file', file);
+    setImporting(true);
     try {
       const result = await api<ImportResult>(`/classes/${classId}/members/import-excel`, {
         method: 'POST',
@@ -51,6 +85,8 @@ export default function Members() {
       showToast(`成功导入 ${result.count} 名成员`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : '导入失败', 'error');
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -80,20 +116,48 @@ export default function Members() {
           <h1>成员管理</h1>
           <p>按班级查看和导入成员账号。</p>
         </div>
-        <select
-          className="ws-select"
-          value={classId}
-          onChange={(e) => setClassId(e.target.value)}
-        >
-          {classes.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        {classes.length > 0 ? (
+          <select
+            className="ws-select"
+            value={classId}
+            onChange={(e) => setClassId(e.target.value)}
+          >
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
       </header>
 
       <div className="ws-grid">
+        {classes.length === 0 && (
+          <section className="ws-panel">
+            <div className="ws-panel-title">
+              <div>
+                <h2>先创建班级</h2>
+                <p>成员必须导入到一个具体班级中</p>
+              </div>
+            </div>
+            <form className="ws-form" onSubmit={handleCreateClass}>
+              <label>
+                班级名称
+                <input
+                  value={className}
+                  onChange={(e) => setClassName(e.target.value)}
+                  placeholder="例如：软件工程 1 班"
+                  maxLength={80}
+                  required
+                />
+              </label>
+              <button className="ws-button" type="submit" disabled={creatingClass}>
+                {creatingClass ? '正在创建…' : '创建班级'}
+              </button>
+            </form>
+          </section>
+        )}
+
         <section className="ws-panel">
           <div className="ws-panel-title">
             <div>
@@ -109,8 +173,9 @@ export default function Members() {
               选择填写好的 .xlsx 文件
               <input ref={fileInputRef} type="file" accept=".xlsx" required />
             </label>
-            <button className="ws-button" type="submit">
-              导入成员
+            {classes.length === 0 && <p className="ws-empty">创建班级后即可导入成员。</p>}
+            <button className="ws-button" type="submit" disabled={importing || !classId}>
+              {importing ? '正在导入…' : '导入成员'}
             </button>
           </form>
         </section>
@@ -134,8 +199,12 @@ export default function Members() {
         <div className="ws-panel-title">
           <div>
             <h2>成员列表</h2>
-            <p>初始密码不会在平台保存明文</p>
+            <p>登录名可直接查看；初始密码请查看导入时使用的 Excel 文件</p>
           </div>
+        </div>
+        <div className="member-password-notice">
+          为保护账号安全，平台只保存密码哈希，管理员和系统都无法查看原密码。
+          学生忘记密码时，请点击右侧按钮设置新的临时密码，并将新密码单独告知本人。
         </div>
         <div style={{ overflow: 'auto' }}>
           <table className="data-table">
@@ -171,7 +240,7 @@ export default function Members() {
                       className="ws-button light"
                       onClick={() => handleResetPassword(m.id)}
                     >
-                      重置密码
+                      设置新临时密码
                     </button>
                   </td>
                 </tr>

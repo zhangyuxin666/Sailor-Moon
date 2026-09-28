@@ -151,7 +151,8 @@ export default function Login() {
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
                 required
-                minLength={6}
+                minLength={initialized ? 1 : 8}
+                placeholder={initialized ? undefined : '至少 8 位'}
               />
             </label>
 
