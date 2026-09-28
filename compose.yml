@@ -23,7 +23,7 @@ services:
     environment:
       DATABASE_URL: postgresql://activity:activity@postgres:5432/activity
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-change-this-local-ai-token}
-    ports: ["127.0.0.1:8000:8000"]
+    ports: ["127.0.0.1:${AI_PORT:-8000}:8000"]
     depends_on:
       postgres: {condition: service_healthy}
     healthcheck:
