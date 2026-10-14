@@ -72,7 +72,10 @@ public class BackgroundJobService {
         if (job == null) return null;
         Map<String, Object> result = new LinkedHashMap<>(job);
         Map<String, Object> run = agentRuns.byRef(String.valueOf(job.get("kind")), String.valueOf(job.get("ref_id")));
-        if (run != null) result.put("agent_run", run);
+        if (run != null) {
+            result.put("agent_run", run);
+            result.putAll(agentRuns.protocolOf(run));
+        }
         return result;
     }
 }

@@ -99,7 +99,28 @@ RAG 查询携带 `organization_id`，只返回本组织和全局文档。FastAPI
 
 ## Agent 运行阶段
 
-`GET /runs/{run_id}` 除后台任务状态外还返回 `agent_run`：
+`GET /runs/{run_id}` 返回后台任务状态、`agent_run`，以及编排协议字段 `context`、`result`、`next_actions`。
+
+`agent_run.status` 是业务工作流状态，取值固定为六个：
+
+- `pending`：已创建，等待执行。
+- `running`：正在执行。
+- `waiting_input`：信息不足，等待用户补充。
+- `succeeded`：已完成。
+- `failed`：失败，可重试或恢复。
+- `cancelled`：已取消，不再执行后续步骤。
+
+`succeeded` 和 `cancelled` 是终态，不会再变成其他状态。数据库通过 `ck_agent_runs_status` 约束拒绝其他取值。
+
+注意区分两套状态：`background_jobs.status` 是执行队列状态（`queued`、`running`、`succeeded`、`failed`），回答“这条任务执行了没有”；`agent_runs.status` 是业务工作流状态，回答“业务走到哪一步”。不要把两者混用。
+
+协议字段：
+
+- `context`：所有智能体共享的调用上下文，含 `user_id`、`organization_id`、`class_id`、`activity_id`、`run_id`、`request_id`，未写入时为 `null`。
+- `result`：统一结果，含 `status`、`data`、`citations`、`next_actions`、`error`，未写入时为 `null`。
+- `next_actions`：从 `result` 中提取的下一步动作列表，没有结果时为空数组。
+
+`phase` 描述当前执行阶段：
 
 - `phase=planning`：模型生成结构化方案和工具意图。
 - `phase=execution`：Spring 按白名单执行落库动作。

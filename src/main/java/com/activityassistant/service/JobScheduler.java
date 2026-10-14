@@ -54,7 +54,7 @@ public class JobScheduler {
             String status = jobs.fail(job, exception);
             if ("activity".equals(job.get("kind")) && "queued".equals(status)) {
                 db.update("UPDATE activities SET status='queued' WHERE id=?", job.get("ref_id"));
-                agentRuns.retrying(String.valueOf(job.get("ref_id")), exception);
+                agentRuns.requeued(String.valueOf(job.get("ref_id")), exception);
             }
         }
     }
