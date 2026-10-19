@@ -86,4 +86,10 @@ class RunStatusTest {
         assertThat(RunStatus.FAILED.canTransitionTo(RunStatus.RUNNING)).isTrue();
         assertThat(RunStatus.FAILED.canTransitionTo(RunStatus.CANCELLED)).isTrue();
     }
+
+    @Test
+    void waitingInputCannotJumpStraightToSucceeded() {
+        assertThat(RunStatus.WAITING_INPUT.canTransitionTo(RunStatus.SUCCEEDED)).isFalse();
+        assertThat(RunStatus.WAITING_INPUT.canTransitionTo(RunStatus.RUNNING)).isTrue();
+    }
 }

@@ -6,7 +6,7 @@
 -- 也不动 activities.status，那是活动自身的状态，前端依赖它显示“排队中”。
 
 -- 1. 默认值从 queued 改为 pending。
-ALTER TABLE agent_runs ALTER COLUMN status SET DEFAULT 'pending';
+ALTER TABLE agent_runs ALTER COLUMN status SET DEFAULT 'pending';-- DEFAULT —— 数据库默认值
 
 -- 2. 历史状态合并：queued 和 retrying 都表示“还没跑完，等待执行”。
 UPDATE agent_runs SET status = 'pending' WHERE status IN ('queued', 'retrying');

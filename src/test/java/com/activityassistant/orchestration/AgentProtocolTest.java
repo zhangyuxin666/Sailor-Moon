@@ -1,5 +1,6 @@
 package com.activityassistant.orchestration;
 
+import com.activityassistant.service.AgentRunService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -74,5 +75,18 @@ class AgentProtocolTest {
         assertThat(parsed.error()).isEqualTo("boom");
         assertThat(parsed.data()).containsEntry("step", "create_form");
         assertThat(parsed.nextActions()).containsExactly("retry");
+    }
+
+    @Test
+    void protocolViewIncludesSupplementalInput() {
+        AgentRunService service = new AgentRunService(null, mapper);
+        Map<String, Object> run = Map.of(
+                "input_json", "{\"event_time\":\"2026-10-20T19:00:00\"}");
+
+        Map<String, Object> view = service.protocolOf(run);
+
+        assertThat(view.get("input")).isInstanceOf(Map.class);
+        assertThat((Map<String, Object>) view.get("input"))
+                .containsEntry("event_time", "2026-10-20T19:00:00");
     }
 }

@@ -87,6 +87,19 @@ public class ActivityController {
         return run;
     }
 
+    @PostMapping("/runs/{runId}/input")
+    Map<String, Object> input(Authentication authentication, @PathVariable String runId,
+                              @Valid @RequestBody ApiModels.RunInputRequest body) {
+        AccountPrincipal account = AuthController.required(authentication);
+        return activities.saveRunInput(runId, account.username(), body.input());
+    }
+
+    @PostMapping("/runs/{runId}/resume")
+    Map<String, Object> resume(Authentication authentication, @PathVariable String runId) {
+        AccountPrincipal account = AuthController.required(authentication);
+        return activities.resumeRun(runId, account.username());
+    }
+
     @GetMapping("/activities/{activityId}")
     Map<String, Object> activity(Authentication authentication, @PathVariable String activityId) {
         return activities.detail(activityId, AuthController.required(authentication).username());

@@ -76,6 +76,10 @@ public class AgentRunService {
         return db.one("SELECT * FROM agent_runs WHERE kind=? AND ref_id=?", kind, refId).orElse(null);
     }
 
+    public Map<String, Object> byId(String id) {
+        return db.one("SELECT * FROM agent_runs WHERE id=?", id).orElse(null);
+    }
+
     /**
      * 把 context_json / resolution_json 解析成结构化字段，供 /runs/{id} 返回。
      * 解析失败时返回 null 而不抛异常，避免一条脏数据让整个查询接口不可用。
@@ -86,6 +90,8 @@ public class AgentRunService {
         view.put("context", parseOrNull(run.get("context_json"), AgentContext.class));
         view.put("result", result);
         view.put("next_actions", result == null ? List.of() : result.nextActions());
+        // 学习点: input 是从 input_json 反序列化出来的补充信息，便于前端恢复等待中的表单。
+        view.put("input", parseObjectOrNull(run.get("input_json")));
         return view;
     }
 
@@ -95,6 +101,18 @@ public class AgentRunService {
         if (value.isBlank() || "null".equals(value)) return null;
         try {
             return mapper.readValue(value, type);
+        } catch (JsonProcessingException exception) {
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object parseObjectOrNull(Object raw) {
+        if (raw == null) return null;
+        String value = String.valueOf(raw);
+        if (value.isBlank() || "null".equals(value)) return null;
+        try {
+            return mapper.readValue(value, Map.class);
         } catch (JsonProcessingException exception) {
             return null;
         }

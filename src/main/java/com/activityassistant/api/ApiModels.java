@@ -69,6 +69,7 @@ public final class ApiModels {
                                       Map<String, Object> extra) {}
     public record ActivityMessageRequest(@NotBlank @Size(max = 4000) String content,
                                          @NotBlank @Size(min = 8, max = 80) String requestId) {}
+    public record RunInputRequest(@NotNull JsonNode input) {}
     public record TaskUpdateRequest(@NotBlank @Pattern(regexp = "pending|done") String status) {}
 
     public record QqInboundRequest(
