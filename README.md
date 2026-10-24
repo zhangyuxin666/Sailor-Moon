@@ -5,17 +5,17 @@
 ## 当前架构
 
 ```text
-浏览器 ──> Caddy / Spring Boot :8080 ──> PostgreSQL 16 + pgvector
-                         │
-                         ├──> FastAPI AI :8000 ──> DeepSeek/OpenAI-compatible API
-                         │                  └──> pgvector RAG
-                         │
-QQ 群 <──> Node.js QQ Gateway :3000 <──────┘
+                         ┌──> Tomcat app-1 :8080 ──┐
+浏览器 ──> Nginx :18080 ─┤                         ├──> PostgreSQL 16 + pgvector
+                         └──> Tomcat app-2 :8080 ──┤
+                                                   └──> FastAPI AI :8000
 ```
 
-- **Spring Boot**：唯一公网业务入口；负责 React 前端托管、Spring Security、账号/组织/班级、作业、活动、表单、文件、审计、持久化任务队列和定时提醒。
+- **Nginx**：集群统一入口，使用轮询把请求分给两个 Tomcat；节点失败时自动切换。
+- **Tomcat 10.1 × 2**：分别运行同一份活动管家 WAR，包含 React 前端和 Spring Boot API。
+- **Spring Boot**：负责 React 前端托管、Spring Security、账号/组织/班级、作业、活动、表单、文件、审计、持久化任务队列和定时提醒。
 - **FastAPI**：仅提供带内部令牌的 AI、Agent 推理和 RAG 接口，不承载浏览器业务 API，也不产生业务副作用。
-- **Node.js QQ Gateway**：维持 QQ WebSocket 连接，接收入站事件并提供内部群消息发送接口；业务判断仍在 Spring Boot。
+- **Node.js QQ Gateway**：单实例模式可选的 QQ WebSocket 连接服务。
 - **PostgreSQL + pgvector**：唯一数据库。Flyway 创建业务表和 `rag_documents` 向量表。
 - **React 前端**：Vite + React + TypeScript 单页应用，源码位于 `web/`，构建产物 `web/dist` 由 Spring Boot 打包托管（同源，原接口路径不变）。
 
@@ -27,31 +27,39 @@ QQ 群 <──> Node.js QQ Gateway :3000 <──────┘
 
 ```powershell
 Copy-Item .env.example .env
-docker compose up -d --build
+start.bat
 ```
 
-访问 <http://127.0.0.1:8080/>。首次访问会要求创建管理者、组织和登录密码。
+默认启动两个外部 Tomcat 和一个 Nginx，访问 <http://127.0.0.1:18080/>。
+首次访问会要求创建管理者、组织和登录密码。完整集群说明见
+[docs/TOMCAT_CLUSTER.md](docs/TOMCAT_CLUSTER.md)。
 
 Windows 也可以双击 `start.bat`，或执行：
 
 ```powershell
 start.bat -NoBrowser
-start.bat -Port 8081
-start.bat -WithQq
+start.bat -Build
+start.bat -Single -Port 8080
+start.bat -Single -WithQq
 ```
 
-默认 Compose 启动 PostgreSQL、AI 和 Spring Boot。QQ Gateway 使用可选 profile；在 `.env` 填写 `QQ_BOT_APP_ID`、`QQ_BOT_APP_SECRET` 后，可以运行：
+`start.bat` 默认启动集群并使用已有镜像，不会重复构建。修改源码、`pom.xml`、
+前端文件或 Dockerfile 后，使用 `start.bat -Build`。Maven、npm 和 pip 依赖会使用
+Docker 持久缓存。`-Single` 用于需要 QQ Gateway 的单实例开发模式。
+
+直接使用 Compose 启动集群：
 
 ```powershell
-docker compose --profile qq up -d --build
+docker compose -f compose.cluster.yml up -d
 ```
 
 常用检查：
 
 ```powershell
-docker compose ps
-docker compose logs -f api ai
-Invoke-RestMethod http://127.0.0.1:8080/health/ready
+docker compose -f compose.cluster.yml ps
+docker compose -f compose.cluster.yml logs -f app1 app2 nginx
+Invoke-RestMethod http://127.0.0.1:18080/health/ready
+Invoke-RestMethod http://127.0.0.1:18080/cluster/node
 Invoke-RestMethod http://127.0.0.1:8000/health/ready
 ```
 
@@ -151,8 +159,11 @@ qq-gateway/                    Node.js QQ Gateway
 web/                          React + TypeScript + Vite 前端（构建产物 dist 由 Spring Boot 托管）
 docs/DESIGN.md                 前端视觉令牌与组件规范
 scripts/                       启动、备份和 SQLite 迁移工具
-compose.yml                    本地四服务编排
+compose.cluster.yml            Nginx + 双外部 Tomcat + PostgreSQL + AI
+compose.yml                    单实例开发编排
 compose.prod.yml               Caddy + 生产编排
+nginx/nginx.conf               集群 upstream、超时和故障转移
+docs/TOMCAT_CLUSTER.md         集群搭建与课堂演示说明
 ```
 
 业务 API 见 [docs/API.md](docs/API.md)，开发约定见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。

@@ -62,11 +62,16 @@ npm run build    # 生产构建：产出 web/dist
 全栈运行：
 
 ```powershell
-docker compose up -d --build
-docker compose --profile qq up -d --build
+start.bat
+start.bat -Single -WithQq
 ```
 
-访问地址：Spring Boot `http://127.0.0.1:8080`，AI 健康检查 `http://127.0.0.1:8000/health/ready`。
+只有修改源码或 Dockerfile 后才使用 `--build`。构建阶段会持久缓存 Maven、npm 和
+pip 下载内容。默认模式为 Nginx + 两个外部 Tomcat；`-Single` 用于单实例开发和
+QQ Gateway。
+
+访问地址：集群入口 `http://127.0.0.1:18080`，单实例模式
+`http://127.0.0.1:8080`，AI 健康检查 `http://127.0.0.1:8000/health/ready`。
 
 ## API 与安全
 
@@ -97,6 +102,7 @@ mvn test
 node --check qq-gateway/server.mjs
 npm --prefix qq-gateway test
 docker compose config --quiet
+docker compose -f compose.cluster.yml config --quiet
 git diff --check
 ```
 

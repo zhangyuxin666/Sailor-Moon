@@ -245,6 +245,23 @@ dialog::backdrop {
 .ws-user strong { font-size: 11px; }
 .ws-user small { margin-top: 3px; color: var(--muted); font-size: 9px; }
 
+.ws-cluster-node {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px 2px;
+  color: var(--muted-2);
+  font-family: var(--font-mono);
+  font-size: 8px;
+}
+
+.ws-cluster-node strong {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+}
+
 .ws-main {
   grid-column: 2;
   width: min(1240px, calc(100% - 72px));
