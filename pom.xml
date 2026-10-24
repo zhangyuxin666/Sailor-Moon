@@ -14,6 +14,7 @@
     <groupId>com.activityassistant</groupId>
     <artifactId>activity-assistant</artifactId>
     <version>2.0.0</version>
+    <packaging>war</packaging>
     <name>activity-assistant</name>
     <description>Activity Assistant business backend</description>
 
@@ -26,6 +27,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-tomcat</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

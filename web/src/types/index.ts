@@ -88,8 +88,12 @@ export interface DraftListResponse {
 
 /** 发布草案返回 */
 export interface PublishResult {
+  status?: 'published' | string;
   result_type: 'todo' | 'activity' | 'notice' | string;
   result_id?: string;
+  run_id?: string;
+  run_status?: string;
+  missing_information?: string[];
 }
 
 /** 作业/待办详情中的参与者 */

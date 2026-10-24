@@ -27,7 +27,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/login", "/portal", "/agent", "/assignments", "/members",
                                 "/settings", "/activity", "/activity/**", "/privacy", "/static/**", "/assets/**", "/favicon.*",
-                                "/health", "/health/ready", "/actuator/health/**", "/auth/status",
+                                "/health", "/health/ready", "/cluster/node", "/actuator/health/**", "/auth/status",
                                 "/auth/bootstrap", "/auth/login", "/public/forms/**", "/forms/**",
                                 "/forms/*/registrations", "/internal/qq/**").permitAll()
                         .anyRequest().authenticated())

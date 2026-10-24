@@ -1,0 +1,101 @@
+name: sailor-moon
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: activity
+      POSTGRES_USER: activity
+      POSTGRES_PASSWORD: activity
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U activity -d activity"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  ai:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://activity:activity@postgres:5432/activity
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-change-this-local-ai-token}
+    ports: ["127.0.0.1:${AI_PORT:-8000}:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment: &app-environment
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/activity
+      SPRING_DATASOURCE_USERNAME: activity
+      SPRING_DATASOURCE_PASSWORD: activity
+      AI_SERVICE_URL: http://ai:8000
+      AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-change-this-local-ai-token}
+      PUBLIC_BASE_URL: http://127.0.0.1:${APP_PORT:-18080}
+      STORAGE_LOCAL_PATH: /app/data/uploads
+      APP_INSTANCE_NAME: app-1
+      CATALINA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8"
+    ports: ["127.0.0.1:${APP1_PORT:-18081}:8080"]
+    volumes: ["./data/uploads:/app/data/uploads"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      ai: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  app2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *app-environment
+      APP_INSTANCE_NAME: app-2
+    ports: ["127.0.0.1:${APP2_PORT:-18082}:8080"]
+    volumes: ["./data/uploads:/app/data/uploads"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      ai: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports: ["${APP_PORT:-18080}:80"]
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      app1: {condition: service_healthy}
+      app2: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health/ready >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  postgres_data:

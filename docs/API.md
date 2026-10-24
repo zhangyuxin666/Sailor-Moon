@@ -41,6 +41,8 @@ AI 只负责意图、规划和文本生成。创建作业、活动、表单、�
 
 活动方案包含受限的 `tool_intents`；Spring 按白名单、账号权限和草案工作流执行，不接受模型直接操作数据库或外部平台。
 
+如果 `activity` 或 `survey` 草案仍缺少关键信息，发布会创建活动与运行记录，但不会启动编排；响应中会带 `run_id`、`run_status=waiting_input` 和 `missing_information`。`assignment` 缺截止时间仍要求先补全草案。
+
 ## 活动
 
 `POST /activities` 返回 `202 Accepted`：
@@ -54,6 +56,8 @@ AI 只负责意图、规划和文本生成。创建作业、活动、表单、�
 ```
 
 - `GET /runs/{run_id}`：查询持久化后台任务。
+- `POST /runs/{run_id}/input`：为 `waiting_input` 的运行保存补充信息，请求体为 `{"input":{...}}`。
+- `POST /runs/{run_id}/resume`：补充信息后重新入队；重复调用处于 `pending/running` 的运行是幂等的。
 - `GET /portal/activities`：当前账号可见活动。
 - `GET /activities/{activity_id}`：方案、任务、表单、提醒、执行步骤和投递记录。
 - `POST /activities/{activity_id}/messages`：手动发送 QQ 通知。
@@ -99,7 +103,47 @@ RAG 查询携带 `organization_id`，只返回本组织和全局文档。FastAPI
 
 ## Agent 运行阶段
 
-`GET /runs/{run_id}` 除后台任务状态外还返回 `agent_run`：
+`GET /runs/{run_id}` 返回后台任务状态、`agent_run`，以及编排协议字段 `context`、`result`、`next_actions`、`input`。
+
+`agent_run.status` 是业务工作流状态，取值固定为六个：
+
+- `pending`：已创建，等待执行。
+- `running`：正在执行。
+- `waiting_input`：信息不足，等待用户补充。
+- `succeeded`：已完成。
+- `failed`：失败，可重试或恢复。
+- `cancelled`：已取消，不再执行后续步骤。
+
+`succeeded` 和 `cancelled` 是终态，不会再变成其他状态。数据库通过 `ck_agent_runs_status` 约束拒绝其他取值。
+
+注意区分两套状态：`background_jobs.status` 是执行队列状态（`queued`、`running`、`succeeded`、`failed`），回答“这条任务执行了没有”；`agent_runs.status` 是业务工作流状态，回答“业务走到哪一步”。不要把两者混用。
+
+协议字段：
+
+- `context`：所有智能体共享的调用上下文，含 `user_id`、`organization_id`、`class_id`、`activity_id`、`run_id`、`request_id`，未写入时为 `null`。
+- `result`：统一结果，含 `status`、`data`、`citations`、`next_actions`、`error`，未写入时为 `null`。
+- `next_actions`：从 `result` 中提取的下一步动作列表，没有结果时为空数组。
+- `input`：等待用户补充时保存的结构化输入，来源为 `agent_runs.input_json`，没有输入时为 `null`。
+
+等待与恢复流程：
+
+```text
+草案缺信息
+  -> agent_runs.status = waiting_input
+  -> activities.status = waiting_input
+  -> 本次 background_jobs 结束，不执行 AI/表单/任务/提醒/QQ
+
+POST /runs/{run_id}/input
+  -> 保存 input_json，运行仍保持 waiting_input
+
+POST /runs/{run_id}/resume
+  -> agent_runs 回到 pending
+  -> activities 回到 queued
+  -> 原 background_job 重新排队
+  -> 已成功方案和步骤继续通过 plan_json、idempotency_keys 和业务表查重复用
+```
+
+`phase` 描述当前执行阶段：
 
 - `phase=planning`：模型生成结构化方案和工具意图。
 - `phase=execution`：Spring 按白名单执行落库动作。

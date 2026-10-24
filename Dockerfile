@@ -2,7 +2,7 @@
 FROM node:22-alpine AS frontend-build
 WORKDIR /web
 COPY web/package.json web/package-lock.json* ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 COPY web/ ./
 RUN npm run build
 
@@ -14,13 +14,13 @@ COPY .mvn/settings.xml ./.mvn/settings.xml
 COPY src ./src
 # 从前端构建阶段复制构建产物到 web/dist，供 Maven resources 打包进 jar
 COPY --from=frontend-build /web/dist ./web/dist
-RUN mvn -B -s .mvn/settings.xml -DskipTests package
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -s .mvn/settings.xml -DskipTests package
 
-# ---- Stage 3: 运行镜像 ----
-FROM eclipse-temurin:21-jre-alpine
+# ---- Stage 3: 外部 Tomcat 运行镜像 ----
+FROM tomcat:10.1-jdk21-temurin
 WORKDIR /app
-RUN addgroup -S app && adduser -S app -G app && mkdir -p /app/data/uploads && chown -R app:app /app
-COPY --from=build /workspace/target/activity-assistant-*.jar /app/app.jar
-USER app
+RUN rm -rf "${CATALINA_HOME}/webapps/"* \
+    && mkdir -p /app/data/uploads
+COPY --from=build /workspace/target/activity-assistant-*.war "${CATALINA_HOME}/webapps/ROOT.war"
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]

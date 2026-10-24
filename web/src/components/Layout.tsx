@@ -4,7 +4,9 @@
  * 6 项导航：总览 / AI助手(管理) / 作业与待办 / 活动管理(管理) / 成员管理(管理) / 设置
  * 非管理者隐藏 AI助手、活动管理、成员管理。
  */
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
 const navItems = [
@@ -20,6 +22,21 @@ export default function Layout() {
   const { account, logout } = useAuth();
   const navigate = useNavigate();
   const isManager = account?.role === 'manager';
+  const [clusterNode, setClusterNode] = useState<{ instance: string; port: number } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    api<{ instance: string; port: number }>('/cluster/node')
+      .then((node) => {
+        if (active) setClusterNode(node);
+      })
+      .catch(() => {
+        if (active) setClusterNode(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -67,6 +84,10 @@ export default function Layout() {
           >
             退出
           </button>
+        </div>
+        <div className="ws-cluster-node" title="当前处理本次请求的 Tomcat 节点">
+          当前节点
+          <strong>{clusterNode ? `${clusterNode.instance} : ${clusterNode.port}` : '未连接'}</strong>
         </div>
       </aside>
 

@@ -1,14 +1,20 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
-    [ValidateRange(1, 65535)]
-    [int]$Port = 8080,
+    [ValidateRange(0, 65535)]
+    [int]$Port = 0,
     [switch]$NoBrowser,
-    [switch]$WithQq
+    [switch]$WithQq,
+    [switch]$Build,
+    [switch]$Single
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $envFile = Join-Path $projectRoot ".env"
+$clusterMode = -not $Single
+if ($Port -eq 0) {
+    $Port = if ($clusterMode) { 18080 } else { 8080 }
+}
 
 function Get-DotEnvValue([string]$Name) {
     if (-not (Test-Path -LiteralPath $envFile)) { return "" }
@@ -35,15 +41,34 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 }
 
 $env:APP_PORT = "$Port"
-$composeArguments = @("compose")
+$composeArguments = if ($clusterMode) {
+    @("compose", "-f", "compose.cluster.yml")
+} else {
+    @("compose")
+}
 $qqAppId = Get-DotEnvValue "QQ_BOT_APP_ID"
 $qqSecret = Get-DotEnvValue "QQ_BOT_APP_SECRET"
-if ($WithQq -or (-not [string]::IsNullOrWhiteSpace($qqAppId) -and -not [string]::IsNullOrWhiteSpace($qqSecret))) {
+$wantQq = $WithQq -or (-not [string]::IsNullOrWhiteSpace($qqAppId) -and -not [string]::IsNullOrWhiteSpace($qqSecret))
+if ($wantQq -and $clusterMode) {
+    throw "QQ Gateway 暂只支持单实例模式，请使用 start.bat -Single -WithQq。"
+}
+if ($wantQq) {
     $composeArguments += @("--profile", "qq")
 }
-$composeArguments += @("up", "-d", "--build")
+$composeArguments += @("up", "-d")
+if ($clusterMode) {
+    $composeArguments += "--remove-orphans"
+}
+if ($Build) {
+    $composeArguments += "--build"
+}
 
-Write-Host "[run] 正在构建并启动 PostgreSQL、AI FastAPI 和 Spring Boot..." -ForegroundColor Cyan
+if ($Build) {
+    Write-Host "[run] 正在重新构建并启动活动管家集群..." -ForegroundColor Cyan
+} else {
+    Write-Host "[run] 正在使用已有镜像启动活动管家集群..." -ForegroundColor Cyan
+    Write-Host "[run] 源码有改动时请使用 start.bat -Build" -ForegroundColor DarkGray
+}
 & docker @composeArguments
 if ($LASTEXITCODE -ne 0) { throw "Docker Compose 启动失败。" }
 
@@ -60,10 +85,26 @@ for ($attempt = 0; $attempt -lt 120; $attempt++) {
 }
 
 if (-not $ready) {
-    & docker compose logs --tail 100 api ai postgres
+    $logArguments = @("compose")
+    if ($clusterMode) {
+        $logArguments += @("-f", "compose.cluster.yml")
+    }
+    $logArguments += @("logs", "--tail", "100")
+    if ($clusterMode) {
+        $logArguments += @("app1", "app2", "nginx")
+    } else {
+        $logArguments += @("api", "ai", "postgres")
+    }
+    & docker @logArguments
     throw "服务未在预期时间内就绪。"
 }
 
 Write-Host "[run] 活动管家已启动：$url" -ForegroundColor Green
-Write-Host "[run] 查看日志：docker compose logs -f api ai"
+if ($clusterMode) {
+    Write-Host "[run] Nginx 入口：$url"
+    Write-Host "[run] Tomcat 节点：http://127.0.0.1:18081 、http://127.0.0.1:18082"
+    Write-Host "[run] 查看日志：docker compose -f compose.cluster.yml logs -f app1 app2 nginx"
+} else {
+    Write-Host "[run] 查看日志：docker compose logs -f api ai"
+}
 if (-not $NoBrowser) { Start-Process $url }

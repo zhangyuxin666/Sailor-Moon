@@ -1,6 +1,7 @@
 package com.activityassistant.service;
 
 import com.activityassistant.config.AppProperties;
+import com.activityassistant.orchestration.ActivityOrchestrator;
 import com.activityassistant.persistence.Db;
 import com.activityassistant.support.Times;
 import org.slf4j.Logger;
@@ -18,17 +19,17 @@ public class JobScheduler {
     private static final Logger log = LoggerFactory.getLogger(JobScheduler.class);
     private final Db db;
     private final BackgroundJobService jobs;
-    private final ActivityService activities;
+    private final ActivityOrchestrator orchestrator;
     private final AgentRunService agentRuns;
     private final ClassroomService classroom;
     private final QqService qq;
     private final AppProperties properties;
 
-    public JobScheduler(Db db, BackgroundJobService jobs, ActivityService activities, AgentRunService agentRuns,
+    public JobScheduler(Db db, BackgroundJobService jobs, ActivityOrchestrator orchestrator, AgentRunService agentRuns,
                         ClassroomService classroom, QqService qq, AppProperties properties) {
         this.db = db;
         this.jobs = jobs;
-        this.activities = activities;
+        this.orchestrator = orchestrator;
         this.agentRuns = agentRuns;
         this.classroom = classroom;
         this.qq = qq;
@@ -37,24 +38,29 @@ public class JobScheduler {
 
     @Scheduled(fixedDelayString = "${WORKER_POLL_MILLIS:1000}")
     public void work() {
+        // 学习点: claimNext 从数据库队列抢一条任务；队列空时返回 null，这是正常情况。
         Map<String, Object> job = jobs.claimNext();
         if (job == null) return;
         try {
             String kind = String.valueOf(job.get("kind"));
             String ref = String.valueOf(job.get("ref_id"));
+            // 学习点: 调度器只负责分派；活动业务步骤由 ActivityOrchestrator 执行。
             switch (kind) {
-                case "activity" -> activities.run(ref);
+                case "activity" -> orchestrator.run(ref);
                 case "reminder" -> deliverReminder(ref);
                 case "todo_reminder" -> deliverTodoReminder(ref);
                 default -> throw new IllegalArgumentException("未知任务类型: " + kind);
             }
+            // 学习点: 只有上面的分支都正常返回，才把后台任务标记为完成。
             jobs.finish(String.valueOf(job.get("id")));
         } catch (Exception exception) {
             log.error("后台任务失败: {}", job.get("id"), exception);
+            // 学习点: fail 返回 queued 表示还会重试，返回 failed 表示已经彻底失败。
             String status = jobs.fail(job, exception);
+            // 学习点: activity 任务还能重试时，要同步活动状态和工作流状态，避免三张表互相矛盾。
             if ("activity".equals(job.get("kind")) && "queued".equals(status)) {
                 db.update("UPDATE activities SET status='queued' WHERE id=?", job.get("ref_id"));
-                agentRuns.retrying(String.valueOf(job.get("ref_id")), exception);
+                agentRuns.requeued(String.valueOf(job.get("ref_id")), exception);
             }
         }
     }

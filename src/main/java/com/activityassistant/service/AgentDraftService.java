@@ -27,9 +27,11 @@ public class AgentDraftService {
     private final AuditService audits;
     private final QqService qq;
     private final ObjectMapper mapper;
+    private final RunLifecycleService lifecycle;
 
     public AgentDraftService(Db db, ClassroomService classroom, ActivityService activities, AiClient ai,
-                             AuditService audits, QqService qq, ObjectMapper mapper) {
+                             AuditService audits, QqService qq, ObjectMapper mapper,
+                             RunLifecycleService lifecycle) {
         this.db = db;
         this.classroom = classroom;
         this.activities = activities;
@@ -37,6 +39,7 @@ public class AgentDraftService {
         this.audits = audits;
         this.qq = qq;
         this.mapper = mapper;
+        this.lifecycle = lifecycle;
     }
 
     @Transactional
@@ -94,27 +97,43 @@ public class AgentDraftService {
         return get(account, id);
     }
 
+    @Transactional
     public Map<String, Object> publish(AccountPrincipal account, String id) {
+        // 学习点: 发布时创建活动、暂停运行和结束本次后台任务必须在同一事务中提交，避免 Worker 抢到暂停任务。
         Map<String, Object> current = get(account, id);
-        if ("published".equals(current.get("status"))) return Map.of("status", "published", "result_type", current.get("result_type"),
-                "result_id", current.get("result_id"), "idempotent", true);
+        if ("published".equals(current.get("status"))) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "published");
+            response.put("result_type", current.get("result_type"));
+            response.put("result_id", current.get("result_id"));
+            response.put("idempotent", true);
+            addRunState(response, current.get("result_type"), current.get("result_id"));
+            return response;
+        }
         if (!"draft".equals(current.get("status"))) throw ApiException.badRequest("草案正在发布，请勿重复操作");
         if (db.update("UPDATE agent_drafts SET status='publishing', updated_at=? WHERE id=? AND status='draft'", LocalDateTime.now().toString(), id) == 0)
             throw ApiException.badRequest("草案正在发布，请勿重复操作");
         JsonNode draft = (JsonNode) current.get("draft");
         try {
-            Map.Entry<String, String> result = execute(account, current, draft);
+            PublishOutcome result = execute(account, current, draft);
             db.update("UPDATE agent_drafts SET status='published', result_type=?, result_id=?, updated_at=? WHERE id=?",
-                    result.getKey(), result.getValue(), LocalDateTime.now().toString(), id);
-            audits.write("agent.draft_publish", account.id(), String.valueOf(current.get("organization_id")), result.getKey(), result.getValue(), Map.of("draft_id", id));
-            return Map.of("status", "published", "result_type", result.getKey(), "result_id", result.getValue());
+                    result.type(), result.id(), LocalDateTime.now().toString(), id);
+            audits.write("agent.draft_publish", account.id(), String.valueOf(current.get("organization_id")), result.type(), result.id(), Map.of("draft_id", id));
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "published");
+            response.put("result_type", result.type());
+            response.put("result_id", result.id());
+            if (result.runId() != null) response.put("run_id", result.runId());
+            if (result.runStatus() != null) response.put("run_status", result.runStatus());
+            if (!result.missingInformation().isEmpty()) response.put("missing_information", result.missingInformation());
+            return response;
         } catch (RuntimeException exception) {
             db.update("UPDATE agent_drafts SET status='draft', updated_at=? WHERE id=?", LocalDateTime.now().toString(), id);
             throw exception;
         }
     }
 
-    private Map.Entry<String, String> execute(AccountPrincipal account, Map<String, Object> current, JsonNode draft) {
+    private PublishOutcome execute(AccountPrincipal account, Map<String, Object> current, JsonNode draft) {
         String intent = draft.path("intent_type").asText();
         String classId = String.valueOf(current.get("class_id"));
         if ("assignment".equals(intent)) {
@@ -122,20 +141,60 @@ public class AgentDraftService {
             Map<String, Object> todo = classroom.createTodo(account, classId, new ApiModels.TodoCreateRequest(
                     draft.path("title").asText(), draft.path("description").asText(draft.path("summary").asText()),
                     draft.path("deadline").asText(), "homework"));
-            return Map.entry("todo", String.valueOf(todo.get("id")));
+            return new PublishOutcome("todo", String.valueOf(todo.get("id")), null, "queued", List.of());
         }
         if ("activity".equals(intent) || "survey".equals(intent)) {
-            String text = draft.path("title").asText() + "。" + draft.path("description").asText(draft.path("summary").asText());
+            String text = activityText(draft);
             Map<String, Object> queued = activities.queue(account, text, draft.path("workflow").path("publish_message").asBoolean(true),
                     classId, draft.path("workflow"));
-            return Map.entry("activity", String.valueOf(queued.get("activity_id")));
+            String activityId = String.valueOf(queued.get("activity_id"));
+            String runId = String.valueOf(queued.get("run_id"));
+            List<String> missing = unresolvedMissingInformation(draft, intent);
+            String runStatus = "queued";
+            // 学习点: 缺信息时活动已经创建，但编排不会开始；等待用户通过 run_id 提交补充信息。
+            if (!missing.isEmpty()) {
+                lifecycle.pauseForInput(runId, activityId, missing);
+                runStatus = "waiting_input";
+            }
+            return new PublishOutcome("activity", activityId, runId, runStatus, missing);
         }
         Map<String, Object> classInfo = classroom.requireClassManager(classId, account);
         if (classInfo.get("qq_group_openid") == null) throw ApiException.badRequest("班级尚未绑定 QQ 群，无法发布通知");
         Map<String, Object> sent = qq.sendGroup(String.valueOf(classInfo.get("qq_group_openid")),
                 "【班级通知】" + draft.path("title").asText() + "\n" + draft.path("description").asText(draft.path("summary").asText()),
                 "agent-notice:" + current.get("id"));
-        return Map.entry("notice", sent.get("id") == null ? Ids.shortId() : String.valueOf(sent.get("id")));
+        return new PublishOutcome("notice", sent.get("id") == null ? Ids.shortId() : String.valueOf(sent.get("id")),
+                null, "queued", List.of());
+    }
+
+    private String activityText(JsonNode draft) {
+        String text = draft.path("title").asText() + "。" + draft.path("description").asText(draft.path("summary").asText());
+        String eventTime = draft.path("event_time").asText();
+        return eventTime.isBlank() ? text : text + "。活动时间：" + eventTime;
+    }
+
+    private List<String> unresolvedMissingInformation(JsonNode draft, String intent) {
+        // 学习点: 以当前草案字段重新判断缺口，避免用户手工填了时间后仍保留 AI 之前的旧提示。
+        List<String> missing = new ArrayList<>();
+        draft.path("missing_information").forEach(item -> missing.add(item.asText()));
+        if ("activity".equals(intent)) {
+            String eventTime = draft.path("event_time").asText();
+            if (eventTime.isBlank()) {
+                if (missing.stream().noneMatch(item -> item.contains("活动时间"))) missing.add("请确认活动时间");
+            } else {
+                missing.removeIf(item -> item.contains("活动时间"));
+            }
+        }
+        return missing;
+    }
+
+    private void addRunState(Map<String, Object> response, Object resultType, Object resultId) {
+        if (!"activity".equals(resultType) || resultId == null) return;
+        db.one("SELECT id, status FROM agent_runs WHERE kind='activity' AND ref_id=?", resultId)
+                .ifPresent(run -> {
+                    response.put("run_id", run.get("id"));
+                    response.put("run_status", run.get("status"));
+                });
     }
 
     private void validateDraft(JsonNode draft) {
@@ -146,5 +205,9 @@ public class AgentDraftService {
     private JsonNode parse(String value) {
         try { return mapper.readTree(value); }
         catch (JsonProcessingException exception) { throw new IllegalStateException(exception); }
+    }
+
+    private record PublishOutcome(String type, String id, String runId, String runStatus,
+                                  List<String> missingInformation) {
     }
 }
