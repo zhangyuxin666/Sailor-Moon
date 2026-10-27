@@ -1,10 +1,45 @@
 # 四人职责与协作边界
 
-| 成员 | 负责范围 | 主要目录 | 对接边界 |
-|---|---|---|---|
-| A：产品与前端 | 页面、交互、前端状态和业务联调 | `web/` | 只调用 Spring Boot 公网 API |
-| B：AI、Agent 与 RAG | 意图解析、策划、复盘、问答、向量检索与评测 | `ai_service/`、`tests_ai/` | 只输出结构化决策或文本，不直接产生业务副作用 |
-| C：Spring 业务后端 | 认证、组织、班级、作业、活动、表单、文件、审计和权限 | `src/main/java/`、`src/test/java/` | 向前端提供 API；向 AI 提供最小可信上下文 |
-| D：基础设施与集成 | PostgreSQL/pgvector、Flyway、任务调度、QQ Gateway、Compose、备份与监控 | `src/main/resources/db/`、`qq-gateway/`、`compose*.yml`、`scripts/` | 确保内部服务隔离、任务可恢复、数据可迁移 |
+职责按业务能力划分，与课程 A/B/C/D 的业务定义对齐；Java、React 是实现技术，不等于某一个人的全部职责。
 
-合并顺序：先冻结 API 和 Flyway 结构，再完成 Spring 业务与 AI 内部契约，然后联调 QQ 和前端。跨服务字段变更必须同步更新 `docs/API.md` 和环境变量示例。
+## A：班级、报名、作业与前端公共体验
+
+- 主责：班级和成员、名册导入、报名表与统计、作业提交与文件访问、签到和反馈的数据收集。
+- 代码入口：`ClassroomService/Controller`、`ActivityService` 的表单与统计方法、`StorageService`；`web/` 的成员、作业、报名和公共组件。
+- 统筹前端公共组件、状态和交互；活动编排、任务、知识库等页面与 B/C/D 共同联调，不把“页面已存在”视为业务完成。
+
+## B：策划、AI、草案语义与 RAG
+
+- 主责：意图解析、结构化草案、策划、知识检索、来源引用、模型归纳与降级说明。
+- 代码入口：`ai_service/`、`tests_ai/`、`KnowledgeService/Controller`；与 D 对接 `AiClient`、草案确认与正式执行契约。
+- 复盘文本归纳由 B 提供；可信数据筛选、快照和持久化由 D 负责。模型不直接创建业务实体或发 QQ。
+
+## C：任务、消息、QQ 与日历工具
+
+- 主责：负责人 ID 与任务规则、待分配池、指派改派、任务状态与通知；QQ 绑定和消息传输、日历内容及改期更新。
+- 代码入口：任务相关 API/服务、`QqService`、`QqGatewayClient`、`qq-gateway/`、日历生成代码。
+- 当前部分任务和日历实现仍嵌在 `ActivityOrchestrator` 中，修改需与 D 协作；文件位置不改变业务主责。
+
+## D：主控编排、提醒、复盘与基础设施
+
+- 主责：统一协议和状态机、编排顺序、输入等待与恢复、取消、步骤记录、后台队列、心跳与超时、提醒、复盘数据快照与保存。
+- 主责：Flyway、PostgreSQL/pgvector 部署、Compose、Nginx/Tomcat、Caddy、健康检查、备份恢复和运行验收。
+- 代码入口：`orchestration/`、`AgentRunService`、`RunLifecycleService`、`BackgroundJobService`、`JobScheduler`、`ActivityService` 的编排门面与复盘方法，以及迁移、部署和脚本。
+
+## 公共安全与跨模块协作
+
+- 公共认证、会话、组织权限、审计由 D 维护基础能力，A/C/B 分别负责自己的数据与工具边界。跨组织导入与密码重置由 A/D 联合验收；班级群归属由 A/C 联合验收。
+- 前端共用 A 的布局和状态约定；各业务主责提供接口、权限和验收场景。D 的等待、恢复、取消、提醒和复盘必须有可用的前端入口。
+- `src/main/java/` 同时包含 A/B/C/D 的能力；`web/` 同样服务多个业务模块。不得按整目录覆盖其他业务职责。
+
+## 契约与完成条件
+
+跨服务先确定请求、响应、状态、组织 ID、账号 ID 和幂等键，再实现与联调。API 变化同步 `docs/API.md` 与前端类型；数据库变化新增 Flyway，保留既有迁移；配置变化同步示例和部署说明。
+
+每项功能完成须同时有代码、适当测试、页面/API 验收证据和文档；待验证与环境阻塞如实记录。源码存在和单元测试通过不等于完整业务通过。
+
+当前架构见 [ARCHITECTURE.md](ARCHITECTURE.md)，接口契约见 [API.md](API.md)，开发要求见 [DEVELOPMENT.md](DEVELOPMENT.md)。
+
+## 共享交付资料
+
+课程七类资料统一由 [README 索引](../README.md#课程交付资料索引) 导航：需求、接口、详细设计、部署、操作、源码和数据库。各模块主责同步本人变更涉及的规则与接口，集成交付统一核对。它们是必要团队文档；个人清单、过程截图、临时报告和环境验收原始记录存项目目录之外。

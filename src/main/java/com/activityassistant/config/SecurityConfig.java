@@ -26,7 +26,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/login", "/portal", "/agent", "/assignments", "/members",
-                                "/settings", "/activity", "/activity/**", "/privacy", "/static/**", "/assets/**", "/favicon.*",
+                                "/settings", "/knowledge", "/participation", "/templates", "/activity", "/activity/**", "/privacy", "/static/**", "/assets/**", "/favicon.*",
                                 "/health", "/health/ready", "/cluster/node", "/actuator/health/**", "/auth/status",
                                 "/auth/bootstrap", "/auth/login", "/public/forms/**", "/forms/**",
                                 "/forms/*/registrations", "/internal/qq/**").permitAll()
@@ -35,7 +35,7 @@ public class SecurityConfig {
                     response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                     response.setContentType(MediaType.APPLICATION_JSON_VALUE);
                     response.setCharacterEncoding("UTF-8");
-                    objectMapper.writeValue(response.getWriter(), Map.of("detail", "请先登录"));
+                    objectMapper.writeValue(response.getWriter(), Map.of("detail", "登录会话已失效，请重新登录", "code", "authentication_required"));
                 }))
                 .headers(headers -> headers
                         .contentTypeOptions(options -> {})

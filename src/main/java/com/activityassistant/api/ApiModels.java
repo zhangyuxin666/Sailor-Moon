@@ -66,7 +66,7 @@ public final class ApiModels {
             String classId) {}
 
     public record RegistrationRequest(@NotBlank String name, @NotBlank String contact,
-                                      Map<String, Object> extra) {}
+                                      Map<String, Object> extra, String requestId, String cancellationToken) {}
     public record ActivityMessageRequest(@NotBlank @Size(max = 4000) String content,
                                          @NotBlank @Size(min = 8, max = 80) String requestId) {}
     public record RunInputRequest(@NotNull JsonNode input) {}

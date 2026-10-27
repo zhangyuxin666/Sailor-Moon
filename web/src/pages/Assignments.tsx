@@ -1,3 +1,5 @@
+import Notifications from '../components/Notifications';
+import ExportActions from '../components/ExportActions';
 /**
  * 作业与待办页 /assignments
  * 管理者：查看完成进度、提醒未完成人员、查看提交详情
@@ -7,6 +9,8 @@ import { useRef, useState, type FormEvent } from 'react';
 import { api, useApi } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../components/Toast';
+import DataState from '../components/DataState';
+import ParticipantTasks from '../components/ParticipantTasks';
 import { formatDate } from '../lib/utils';
 import type { DashboardData, TodoDetail } from '../types';
 
@@ -22,20 +26,28 @@ export default function Assignments() {
   const { showToast } = useToast();
   const isManager = account?.role === 'manager';
 
-  const { data, reload } = useApi<DashboardData>(() =>
+  const { data, loading, error, reload } = useApi<DashboardData>(() =>
     api<DashboardData>('/portal/dashboard'),
   );
 
   const [filter, setFilter] = useState<Filter>('all');
   const [detail, setDetail] = useState<TodoDetail | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const detailSequence = useRef(0);
+  const draftSubmissions = useRef<Record<string, { note: string; file: File | null }>>({});
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  const [selectedTodoId, setSelectedTodoId] = useState<string | null>(null);
+  const [reminding, setReminding] = useState(false);
 
   // 提交表单状态
   const [note, setNote] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const submissionFileRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const todos = data?.todos ?? [];
+  const activityTasks = data?.activity_tasks ?? [];
 
   const filtered = todos.filter((t) => {
     if (filter === 'all') return true;
@@ -48,23 +60,55 @@ export default function Assignments() {
   });
 
   async function openDetail(id: string) {
+    if (submitting) return;
+    const sequence = ++detailSequence.current;
+    setSelectedTodoId(id);
+    setDetail(null);
+    setDetailError('');
+    setDetailLoading(true);
+    if (!dialogRef.current?.open) dialogRef.current?.showModal();
     try {
-      const d = await api<TodoDetail>(`/todos/${id}`);
+      const d = await api<TodoDetail>('/todos/' + encodeURIComponent(id));
+      if (sequence !== detailSequence.current) return;
       setDetail(d);
-      setNote(d.assignment?.note ?? '');
-      setFile(null);
-      dialogRef.current?.showModal();
+      const draft = draftSubmissions.current[id];
+      setNote(draft?.note ?? d.assignment?.note ?? '');
+      setFile(draft?.file ?? null);
     } catch (e) {
-      showToast(e instanceof Error ? e.message : '加载详情失败', 'error');
+      if (sequence === detailSequence.current) {
+        setDetailError(e instanceof Error ? e.message : '加载详情失败');
+      }
+    } finally {
+      if (sequence === detailSequence.current) setDetailLoading(false);
     }
   }
 
   function closeDialog() {
-    dialogRef.current?.close();
+    if (!submitting) dialogRef.current?.close();
+  }
+
+  function finishClose() {
+    detailSequence.current += 1;
     setDetail(null);
+    setSelectedTodoId(null);
+    setDetailError('');
+    setDetailLoading(false);
+  }
+
+  function changeNote(value: string) {
+    setNote(value);
+    if (selectedTodoId) draftSubmissions.current[selectedTodoId] = { note: value, file };
+  }
+
+  function changeFile(value: File | null) {
+    setFile(value);
+    if (!value && submissionFileRef.current) submissionFileRef.current.value = '';
+    if (selectedTodoId) draftSubmissions.current[selectedTodoId] = { note, file: value };
   }
 
   async function handleRemind(id: string) {
+    if (reminding) return;
+    setReminding(true);
     try {
       const r = await api<RemindResult>(`/todos/${id}/remind`, { method: 'POST' });
       showToast(
@@ -72,19 +116,22 @@ export default function Assignments() {
       );
     } catch (e) {
       showToast(e instanceof Error ? e.message : '提醒失败', 'error');
+    } finally {
+      setReminding(false);
     }
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!detail) return;
+    if (!detail || submitting) return;
     setSubmitting(true);
     try {
       const formData = new FormData();
       formData.append('note', note);
       if (file) formData.append('file', file);
       await api(`/todos/${detail.todo.id}/submit`, { method: 'POST', body: formData });
-      closeDialog();
+      delete draftSubmissions.current[detail.todo.id];
+      dialogRef.current?.close();
       reload();
       showToast('提交成功');
     } catch (err) {
@@ -96,15 +143,21 @@ export default function Assignments() {
 
   return (
     <>
+      <Notifications />
       <header className="ws-header">
         <div>
           <p className="ws-kicker">ASSIGNMENTS</p>
-          <h1>{isManager ? '作业与待办' : '我的作业与待办'}</h1>
+          <h1>{isManager ? '作业与待办' : '我的作业与活动任务'}</h1>
           <p>发布统一走 AI 助手，这里查看、提交与催办。</p>
         </div>
       </header>
 
-      <section className="ws-panel">
+      <DataState loading={loading} error={error} onRetry={reload} loadingText="正在加载作业和活动任务…" />
+      {!loading && !error && data && !isManager && <section className="ws-panel">
+        <div className="ws-panel-title"><div><h2>我的活动任务</h2><p>更新分配给自己的任务完成情况</p></div></div>
+        <ParticipantTasks tasks={activityTasks} onChanged={reload} filter={filter} />
+      </section>}
+      {!loading && !error && data && <section className="ws-panel" style={{ marginTop: 13 }}>
         <div className="ws-panel-title">
           <div>
             <h2>全部作业</h2>
@@ -130,6 +183,7 @@ export default function Assignments() {
               <button
                 key={t.id}
                 className="ws-list-item"
+                disabled={detailLoading}
                 onClick={() => openDetail(t.id)}
               >
                 <span className={`ws-tag ${done ? 'green' : 'amber'}`}>
@@ -150,18 +204,21 @@ export default function Assignments() {
             );
           })}
         </div>
-      </section>
+      </section>}
 
       <dialog
         ref={dialogRef}
         className="account-dialog"
         style={{ width: 'min(850px, 92vw)' }}
-        onClose={() => setDetail(null)}
+        onClose={finishClose}
+        onCancel={(event) => { if (submitting) event.preventDefault(); }}
       >
-        <button className="dialog-close" onClick={closeDialog}>
+        <button className="dialog-close" aria-label="关闭作业详情" disabled={submitting} onClick={closeDialog}>
           ×
         </button>
-        {detail && (
+        <DataState loading={detailLoading} error={detailError} loadingText="正在读取作业详情…"
+          onRetry={() => { if (selectedTodoId) void openDetail(selectedTodoId); }} />
+        {detail && !detailLoading && !detailError && (
           <>
             {isManager ? (
               <>
@@ -169,10 +226,11 @@ export default function Assignments() {
                 <h2>{detail.todo.title}</h2>
                 {detail.todo.description && <p>{detail.todo.description}</p>}
                 <div className="publish-bar">
-                  <button className="ws-button" onClick={() => handleRemind(detail.todo.id)}>
-                    提醒未完成人员
+                  <button className="ws-button" disabled={reminding} onClick={() => handleRemind(detail.todo.id)}>
+                    {reminding ? '正在发送…' : '提醒未完成人员'}
                   </button>
                 </div>
+                <ExportActions todoId={detail.todo.id}/>
                 <div style={{ overflow: 'auto' }}>
                   <table className="data-table">
                     <thead>
@@ -221,16 +279,21 @@ export default function Assignments() {
                     <textarea
                       rows={4}
                       value={note}
-                      onChange={(e) => setNote(e.target.value)}
+                      disabled={submitting}
+                      onChange={(e) => changeNote(e.target.value)}
                     />
                   </label>
                   <label>
                     上传文件
                     <input
                       type="file"
-                      onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                      ref={submissionFileRef}
+                      disabled={submitting}
+                      onChange={(e) => changeFile(e.target.files?.[0] ?? null)}
                     />
                   </label>
+                  {file && <p>已选择文件：{file.name} <button type="button" className="ws-button light"
+                    disabled={submitting} onClick={() => changeFile(null)}>移除文件</button></p>}
                   <button className="ws-button" type="submit" disabled={submitting}>
                     {submitting ? '提交中…' : '确认提交'}
                   </button>

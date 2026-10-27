@@ -4,6 +4,7 @@ import com.activityassistant.orchestration.AgentContext;
 import com.activityassistant.orchestration.AgentResult;
 import com.activityassistant.orchestration.RunStatus;
 import com.activityassistant.persistence.Db;
+import com.activityassistant.support.PublicErrors;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -43,9 +44,18 @@ public class AgentRunService {
     }
 
     public void complete(String refId, Object result) {
-        update(refId, RunStatus.SUCCEEDED.wire(), "delivery", null, json(result), null);
+        Map<String, Object> data = mapper.convertValue(result,
+                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        AgentResult protocol = new AgentResult(RunStatus.SUCCEEDED, data, List.of(), List.of(), null);
+        db.update("UPDATE agent_runs SET status='succeeded', phase='delivery', result_json=?, resolution_json=?, " +
+                        "error=NULL, updated_at=? WHERE ref_id=? AND status<>'cancelled'",
+                json(result), json(protocol), LocalDateTime.now().toString(), refId);
     }
 
+    public void waiting(String id){
+        var result=new AgentResult(RunStatus.WAITING_INPUT,Map.of("activity_id",id,"missing_information",List.of("请确认活动时间")),List.of(),List.of("provide_input"),null);
+        db.update("UPDATE agent_runs SET status='waiting_input',phase='planning',resolution_json=?,updated_at=? WHERE kind='activity' AND ref_id=? AND status<>'cancelled'",json(result),LocalDateTime.now().toString(),id);
+    }
     public void fail(String refId, Exception exception) {
         update(refId, RunStatus.FAILED.wire(), null, null, null, error(exception));
     }
@@ -86,12 +96,15 @@ public class AgentRunService {
      */
     public Map<String, Object> protocolOf(Map<String, Object> run) {
         AgentResult result = parseOrNull(run.get("resolution_json"), AgentResult.class);
+        if (result != null) result = new AgentResult(result.status(), result.data(), result.citations(),
+                result.nextActions(), PublicErrors.message(result.error()));
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("context", parseOrNull(run.get("context_json"), AgentContext.class));
         view.put("result", result);
         view.put("next_actions", result == null ? List.of() : result.nextActions());
         // 学习点: input 是从 input_json 反序列化出来的补充信息，便于前端恢复等待中的表单。
         view.put("input", parseObjectOrNull(run.get("input_json")));
+        view.put("plan", parseObjectOrNull(run.get("plan_json")));
         return view;
     }
 
@@ -121,7 +134,7 @@ public class AgentRunService {
     private void update(String refId, String status, String phase, String plan, String result, String error) {
         db.update("UPDATE agent_runs SET status=COALESCE(?, status), phase=COALESCE(?, phase), " +
                         "plan_json=COALESCE(?, plan_json), result_json=COALESCE(?, result_json), error=?, updated_at=? " +
-                        "WHERE ref_id=?",
+                        "WHERE ref_id=? AND status<>'cancelled'",
                 status, phase, plan, result, error, LocalDateTime.now().toString(), refId);
     }
 
@@ -134,7 +147,6 @@ public class AgentRunService {
     }
 
     private String error(Throwable exception) {
-        String message = exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage();
-        return message.substring(0, Math.min(message.length(), 2000));
+        return PublicErrors.failure(exception);
     }
 }

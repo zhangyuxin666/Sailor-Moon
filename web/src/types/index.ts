@@ -8,6 +8,7 @@ export interface Account {
   username: string;
   display_name: string;
   role: 'manager' | 'participant';
+  force_password_change?: number;
   [key: string]: unknown;
 }
 
@@ -40,8 +41,9 @@ export interface TodoSummary {
 
 /** /portal/dashboard 返回 */
 export interface DashboardData {
-  classes: ClassInfo[];
-  todos: TodoSummary[];
+  classes?: ClassInfo[];
+  todos?: TodoSummary[];
+  activity_tasks?: ActivityTask[];
 }
 
 /** Agent 草案的 workflow 各步骤 */
@@ -68,6 +70,8 @@ export interface DraftDetail {
   missing_information?: string[];
   reasoning?: string;
   workflow: DraftWorkflow;
+  form_fields?: PublicFormField[];
+  execution_plan?: DraftExecutionPlan;
   [key: string]: unknown;
 }
 
@@ -79,6 +83,9 @@ export interface DraftItem {
   class_name: string;
   status: 'draft' | 'published';
   draft: DraftDetail;
+  result_type?: string;
+  result_id?: string;
+  run_id?: string;
 }
 
 /** /agent/drafts 返回 */
@@ -184,10 +191,20 @@ export interface ActivityListResponse {
 
 /** 活动策划 */
 export interface ActivityPlan {
+  generation?: import('../components/GenerationInfo').Generation;
+  analysis_generation?: import('../components/GenerationInfo').Generation;
   title?: string;
   description?: string;
   event_time?: string;
   materials?: string[];
+}
+
+/** Confirmed plan data is separate from persisted task rows. */
+export interface DraftExecutionPlan extends ActivityPlan {
+  tasks?: Array<{ title: string; account_id: string; assignee: string }>;
+  form_fields?: PublicFormField[];
+  remind_minutes_before?: number;
+  tool_intents?: Array<{ tool: string; arguments?: Record<string, unknown> }>;
 }
 
 /** 活动任务 */
@@ -195,6 +212,16 @@ export interface ActivityTask {
   id: string;
   title: string;
   assignee: string;
+  account_id?: string;
+  activity_id?: string;
+  activity_title?: string;
+  activity_status?: string;
+  description?: string;
+  deadline?: string | null;
+  priority?: string;
+  version?: number;
+  unassigned_reason?: string | null;
+  depends_on?: string[];
   status: 'done' | 'pending';
 }
 
@@ -206,6 +233,7 @@ export interface ActivityForm {
 
 /** 活动提醒 */
 export interface ActivityReminder {
+  error?: string | null;
   id: string;
   remind_at: string;
   message: string;
@@ -214,12 +242,19 @@ export interface ActivityReminder {
 
 /** 活动执行步骤 */
 export interface ActivityStep {
+  id?: string | number;
   step: string;
   detail?: string;
+  status?: string;
+  phase?: string;
+  error?: string | null;
+  attempts?: number;
 }
 
 /** QQ 投递记录 */
 export interface ActivityDelivery {
+  id: string;
+  logical_key?: string;
   kind: 'announcement' | 'reminder' | 'manual' | string;
   content: string;
   status: 'sent' | 'failed' | string;
@@ -227,11 +262,14 @@ export interface ActivityDelivery {
 
 /** 活动详情 */
 export interface ActivityDetail {
+  run_id?: string | null;
   activity: {
     id: string;
     title?: string;
     status: string;
     raw_input?: string;
+    version?: number;
+    cancel_reason?: string;
     created_at: string;
   };
   plan?: ActivityPlan;
@@ -244,12 +282,36 @@ export interface ActivityDetail {
 
 /** 报名统计 */
 export interface FormStats {
+  form_id?: string;
+  title?: string;
   count: number;
+  fields?: PublicFormField[];
+  settings?: RegistrationSettings;
   registrations: Array<{
     name: string;
     contact: string;
     created_at: string;
+    extra?: Record<string, unknown>;
+    id?: number;
+    status?: string;
+    cancelled_at?: string | null;
   }>;
+}
+
+export interface RunDetails {
+  id?: string;
+  status: string;
+  error?: string | null;
+  attempts?: number;
+  agent_run?: { id?: string; status: string; phase?: string; error?: string | null };
+  result?: {
+    status?: string;
+    data?: { missing_information?: string[]; [key: string]: unknown };
+    error?: string | null;
+  } | null;
+  input?: Record<string, unknown> | null;
+  plan?: DraftExecutionPlan | null;
+  next_actions?: string[];
 }
 
 /** 公开报名表单字段 */
@@ -262,7 +324,19 @@ export interface PublicFormField {
 }
 
 /** /public/forms/{id} 返回 */
-export interface PublicFormData {
+export interface RegistrationSettings {
+  id: string;
+  capacity: number | null;
+  registration_deadline?: string | null;
+  registration_status: string;
+  version: number;
+  registration_count?: number;
+  remaining?: number | null;
+  accepting_registrations?: boolean;
+  closed_reason?: string | null;
+}
+
+export interface PublicFormData extends Partial<RegistrationSettings> {
   activity_title: string;
   description: string;
   event_time?: string;

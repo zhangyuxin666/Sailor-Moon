@@ -1076,3 +1076,21 @@ dialog::backdrop {
   .auth-hero ul { display: none; }
   .auth-form-panel { padding: 38px 24px 55px; }
 }
+
+/* Keep activity forms and long management history inside their grid tracks. */
+.ws-grid > *, .ws-panel, .ws-list, .ws-list-item > *,
+.ws-form, .ws-form fieldset, .ws-form label { min-width: 0; }
+[aria-label="任务管理"] .ws-list-item strong,
+[aria-label="任务管理"] .ws-list-item small,
+[aria-label="活动变更记录"] .ws-list-item strong,
+[aria-label="活动变更记录"] .ws-list-item small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 680px) {
+  [aria-label="任务管理"] .ws-list-item,
+  [aria-label="活动变更记录"] .ws-list-item { grid-template-columns: minmax(0, 1fr); }
+  .ws-cluster-node { display: none; }
+  .ws-sidebar { flex-wrap: wrap; }
+  .ws-user { margin-left: auto; }
+}

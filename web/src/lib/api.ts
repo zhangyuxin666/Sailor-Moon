@@ -4,9 +4,11 @@
  * 对应旧 frontend 中 App.api() 和 api() 函数。
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { sessionRequired } from './session-policy';
 
 export interface ApiError extends Error {
   status?: number;
+  code?: string;
 }
 
 /**
@@ -49,6 +51,13 @@ export async function api<T = unknown>(
       : String(detail);
     const error = new Error(message) as ApiError;
     error.status = response.status;
+    error.code = (data as { code?: string })?.code;
+    if (error.code === 'password_change_required') {
+      window.dispatchEvent(new Event('activity:password-change-required'));
+    }
+    if (sessionRequired(path, response.status, error.code, message)) {
+      window.dispatchEvent(new Event('activity:authentication-required'));
+    }
     throw error;
   }
 
@@ -75,22 +84,25 @@ export function useApi<T>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const requestSequence = useRef(0);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const load = useCallback(async () => {
+    const sequence = ++requestSequence.current;
     setLoading(true);
+    setData(null);
     setError(null);
     try {
       const result = await fetcher();
-      if (mountedRef.current) {
+      if (mountedRef.current && sequence === requestSequence.current) {
         setData(result);
       }
     } catch (e) {
-      if (mountedRef.current) {
+      if (mountedRef.current && sequence === requestSequence.current) {
         setError(e instanceof Error ? e.message : '请求失败');
       }
     } finally {
-      if (mountedRef.current) {
+      if (mountedRef.current && sequence === requestSequence.current) {
         setLoading(false);
       }
     }
@@ -101,6 +113,7 @@ export function useApi<T>(
     load();
     return () => {
       mountedRef.current = false;
+      requestSequence.current += 1;
     };
   }, [load]);
 

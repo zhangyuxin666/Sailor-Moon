@@ -68,9 +68,11 @@ services:
       - path: .env
         required: false
     environment:
+      QQ_DELIVERY_PATH: /app/data/deliveries
       QQ_GATEWAY_BACKEND_URL: http://api:8080
       QQ_GATEWAY_TOKEN: ${QQ_GATEWAY_TOKEN:-change-this-local-token}
     ports: ["127.0.0.1:3000:3000"]
+    volumes: ["qq_delivery_data:/app/data/deliveries"]
     depends_on:
       api: {condition: service_healthy}
     healthcheck:
@@ -80,4 +82,5 @@ services:
       retries: 10
 
 volumes:
+  qq_delivery_data:
   postgres_data:
