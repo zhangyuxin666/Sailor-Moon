@@ -1,12 +1,12 @@
 server:
   port: ${SERVER_PORT:8080}
   forward-headers-strategy: framework
+
+spring:
   servlet:
     multipart:
       max-file-size: ${UPLOAD_MAX_MB:20}MB
       max-request-size: ${UPLOAD_MAX_MB:20}MB
-
-spring:
   application:
     name: activity-assistant-business
   datasource:

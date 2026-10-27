@@ -1,0 +1,257 @@
+{
+  "services": {
+    "postgres": {
+      "image": "pgvector/pgvector:pg16",
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      },
+      "environment": {
+        "POSTGRES_DB": "e2etest",
+        "POSTGRES_USER": "e2etest",
+        "POSTGRES_PASSWORD": "offline-e2e-db"
+      },
+      "volumes": [
+        "postgres_data:/var/lib/postgresql/data"
+      ],
+      "networks": [
+        "internal"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U e2etest -d e2etest"
+        ],
+        "interval": "2s",
+        "timeout": "3s",
+        "retries": 30
+      }
+    },
+    "ai": {
+      "image": "${E2E_AI_IMAGE:-sailor-moon-e2e-ai:local}",
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      },
+      "environment": {
+        "DATABASE_URL": "postgresql://e2etest:offline-e2e-db@postgres:5432/e2etest",
+        "AI_INTERNAL_TOKEN": "offline-e2e-ai-token",
+        "LLM_API_KEY": "",
+        "LLM_BASE_URL": "",
+        "EMBEDDING_API_KEY": "",
+        "EMBEDDING_BASE_URL": ""
+      },
+      "networks": [
+        "internal"
+      ]
+    },
+    "qq-gateway": {
+      "image": "node:22-alpine",
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      },
+      "environment": {
+        "QQ_GATEWAY_TOKEN": "offline-e2e-gateway-token",
+        "QQ_DELIVERY_PATH": "/deliveries"
+      },
+      "volumes": [
+        "./scripts/fixtures/offline-gateway.mjs:/fixture.mjs:ro",
+        "./qq-gateway:/gateway:ro",
+        "deliveries:/deliveries"
+      ],
+      "command": [
+        "node",
+        "/fixture.mjs"
+      ],
+      "networks": [
+        "internal"
+      ]
+    },
+    "api": {
+      "image": "${E2E_API_IMAGE:-sailor-moon-e2e-api:local}",
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      },
+      "environment": {
+        "SPRING_DATASOURCE_URL": "jdbc:postgresql://postgres:5432/e2etest",
+        "SPRING_DATASOURCE_USERNAME": "e2etest",
+        "SPRING_DATASOURCE_PASSWORD": "offline-e2e-db",
+        "AI_SERVICE_URL": "http://ai:8000",
+        "AI_INTERNAL_TOKEN": "offline-e2e-ai-token",
+        "QQ_GATEWAY_URL": "http://qq-gateway:3000",
+        "QQ_GATEWAY_TOKEN": "offline-e2e-gateway-token",
+        "QQ_BOT_APP_ID": "",
+        "QQ_BOT_APP_SECRET": "",
+        "PUBLIC_BASE_URL": "http://127.0.0.1:${E2E_PORT:-18401}",
+        "STORAGE_LOCAL_PATH": "/app/data/uploads",
+        "UPLOAD_MAX_MB": "2",
+        "USER_STORAGE_QUOTA_MB": "3",
+        "CATALINA_OPTS": "-Xms128m -Xmx512m -Dfile.encoding=UTF-8",
+        "WORKER_POLL_MILLIS": "250",
+        "INTERNAL_HTTP_TIMEOUT": "5s",
+        "TZ": "Asia/Shanghai",
+        "APP_INSTANCE_NAME": "api"
+      },
+      "volumes": [
+        "uploads:/app/data/uploads"
+      ],
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy"
+        },
+        "ai": {
+          "condition": "service_started"
+        }
+      },
+      "networks": [
+        "internal",
+        "front"
+      ],
+      "profiles": [
+        "single"
+      ],
+      "ports": [
+        "127.0.0.1:${E2E_PORT:-18401}:8080"
+      ]
+    },
+    "app1": {
+      "image": "${E2E_API_IMAGE:-sailor-moon-e2e-api:local}",
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      },
+      "environment": {
+        "SPRING_DATASOURCE_URL": "jdbc:postgresql://postgres:5432/e2etest",
+        "SPRING_DATASOURCE_USERNAME": "e2etest",
+        "SPRING_DATASOURCE_PASSWORD": "offline-e2e-db",
+        "AI_SERVICE_URL": "http://ai:8000",
+        "AI_INTERNAL_TOKEN": "offline-e2e-ai-token",
+        "QQ_GATEWAY_URL": "http://qq-gateway:3000",
+        "QQ_GATEWAY_TOKEN": "offline-e2e-gateway-token",
+        "QQ_BOT_APP_ID": "",
+        "QQ_BOT_APP_SECRET": "",
+        "PUBLIC_BASE_URL": "http://127.0.0.1:${E2E_PORT:-18401}",
+        "STORAGE_LOCAL_PATH": "/app/data/uploads",
+        "UPLOAD_MAX_MB": "2",
+        "USER_STORAGE_QUOTA_MB": "3",
+        "CATALINA_OPTS": "-Xms128m -Xmx512m -Dfile.encoding=UTF-8",
+        "WORKER_POLL_MILLIS": "250",
+        "INTERNAL_HTTP_TIMEOUT": "5s",
+        "TZ": "Asia/Shanghai",
+        "APP_INSTANCE_NAME": "app1"
+      },
+      "volumes": [
+        "uploads:/app/data/uploads"
+      ],
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy"
+        },
+        "ai": {
+          "condition": "service_started"
+        }
+      },
+      "networks": [
+        "internal",
+        "front"
+      ],
+      "profiles": [
+        "cluster"
+      ]
+    },
+    "app2": {
+      "image": "${E2E_API_IMAGE:-sailor-moon-e2e-api:local}",
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      },
+      "environment": {
+        "SPRING_DATASOURCE_URL": "jdbc:postgresql://postgres:5432/e2etest",
+        "SPRING_DATASOURCE_USERNAME": "e2etest",
+        "SPRING_DATASOURCE_PASSWORD": "offline-e2e-db",
+        "AI_SERVICE_URL": "http://ai:8000",
+        "AI_INTERNAL_TOKEN": "offline-e2e-ai-token",
+        "QQ_GATEWAY_URL": "http://qq-gateway:3000",
+        "QQ_GATEWAY_TOKEN": "offline-e2e-gateway-token",
+        "QQ_BOT_APP_ID": "",
+        "QQ_BOT_APP_SECRET": "",
+        "PUBLIC_BASE_URL": "http://127.0.0.1:${E2E_PORT:-18401}",
+        "STORAGE_LOCAL_PATH": "/app/data/uploads",
+        "UPLOAD_MAX_MB": "2",
+        "USER_STORAGE_QUOTA_MB": "3",
+        "CATALINA_OPTS": "-Xms128m -Xmx512m -Dfile.encoding=UTF-8",
+        "WORKER_POLL_MILLIS": "250",
+        "INTERNAL_HTTP_TIMEOUT": "5s",
+        "TZ": "Asia/Shanghai",
+        "APP_INSTANCE_NAME": "app2"
+      },
+      "volumes": [
+        "uploads:/app/data/uploads"
+      ],
+      "depends_on": {
+        "postgres": {
+          "condition": "service_healthy"
+        },
+        "ai": {
+          "condition": "service_started"
+        }
+      },
+      "networks": [
+        "internal",
+        "front"
+      ],
+      "profiles": [
+        "cluster"
+      ]
+    },
+    "nginx": {
+      "image": "nginx:1.27-alpine",
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      },
+      "profiles": [
+        "cluster"
+      ],
+      "ports": [
+        "127.0.0.1:${E2E_PORT:-18401}:80"
+      ],
+      "volumes": [
+        "./nginx/nginx.conf:/etc/nginx/nginx.conf:ro"
+      ],
+      "depends_on": [
+        "app1",
+        "app2"
+      ],
+      "networks": [
+        "internal",
+        "front"
+      ]
+    }
+  },
+  "networks": {
+    "internal": {
+      "internal": true,
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      }
+    },
+    "front": {
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      }
+    }
+  },
+  "volumes": {
+    "postgres_data": {
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      }
+    },
+    "uploads": {
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      }
+    },
+    "deliveries": {
+      "labels": {
+        "io.sailor-moon.offline-test": "true"
+      }
+    }
+  }
+}

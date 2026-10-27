@@ -16,7 +16,8 @@ import java.util.Map;
 public class ApiExceptionHandler {
     @ExceptionHandler(ApiException.class)
     ResponseEntity<Map<String, String>> api(ApiException exception) {
-        return ResponseEntity.status(exception.status()).body(Map.of("detail", exception.getMessage()));
+        return ResponseEntity.status(exception.status()).body(Map.of("detail",
+                exception.status().is5xxServerError() ? PublicErrors.failure(exception) : exception.getMessage()));
     }
 
     @ExceptionHandler({MethodArgumentNotValidException.class, ConstraintViolationException.class,
@@ -32,6 +33,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     ResponseEntity<Map<String, String>> upload(MaxUploadSizeExceededException exception) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of("detail", "上传文件过大"));
+    }
+
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    ResponseEntity<Map<String, String>> invalidJson(Exception exception) {
+        return ResponseEntity.badRequest().body(Map.of("detail", "请求 JSON 格式无效"));
+    }
+
+    @ExceptionHandler(RuntimeException.class)
+    ResponseEntity<Map<String, String>> unexpected(RuntimeException exception) {
+        return ResponseEntity.internalServerError().body(Map.of("detail", PublicErrors.failure(exception)));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

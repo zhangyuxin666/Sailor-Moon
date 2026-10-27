@@ -15,3 +15,6 @@ backups/
 .run/
 .idea/
 *.iml
+
+# TypeScript incremental build cache
+*.tsbuildinfo

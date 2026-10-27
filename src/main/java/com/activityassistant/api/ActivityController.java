@@ -74,7 +74,7 @@ public class ActivityController {
     @PostMapping("/forms/{formId}/registrations")
     Map<String, Object> register(@PathVariable String formId,
                                  @Valid @RequestBody ApiModels.RegistrationRequest body) {
-        return activities.registration(formId, body.name(), body.contact(), body.extra());
+        return activities.registration(formId, body.name(), body.contact(), body.extra(), body.requestId(), body.cancellationToken());
     }
 
     @GetMapping("/runs/{runId}")
@@ -108,11 +108,6 @@ public class ActivityController {
     @GetMapping("/activities/{activityId}/form-stats")
     Map<String, Object> stats(Authentication authentication, @PathVariable String activityId) {
         return activities.formStats(activityId, AuthController.required(authentication).username());
-    }
-
-    @PostMapping("/activities/{activityId}/recap")
-    Map<String, Object> recap(Authentication authentication, @PathVariable String activityId) {
-        return activities.recap(activityId, AuthController.required(authentication).username());
     }
 
     @PostMapping("/reminders/{reminderId}/cancel")

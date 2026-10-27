@@ -69,8 +69,10 @@ services:
       - path: .env.production
         required: false
     environment:
+      QQ_DELIVERY_PATH: /app/data/deliveries
       QQ_GATEWAY_BACKEND_URL: http://api:8080
       QQ_GATEWAY_TOKEN: ${QQ_GATEWAY_TOKEN}
+    volumes: ["qq_delivery_data:/app/data/deliveries"]
     depends_on:
       api: {condition: service_healthy}
     healthcheck:
@@ -93,6 +95,7 @@ services:
       api: {condition: service_healthy}
 
 volumes:
+  qq_delivery_data:
   postgres_data:
   uploads_data:
   caddy_data:

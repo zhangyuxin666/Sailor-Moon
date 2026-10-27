@@ -49,9 +49,6 @@ $composeArguments = if ($clusterMode) {
 $qqAppId = Get-DotEnvValue "QQ_BOT_APP_ID"
 $qqSecret = Get-DotEnvValue "QQ_BOT_APP_SECRET"
 $wantQq = $WithQq -or (-not [string]::IsNullOrWhiteSpace($qqAppId) -and -not [string]::IsNullOrWhiteSpace($qqSecret))
-if ($wantQq -and $clusterMode) {
-    throw "QQ Gateway 暂只支持单实例模式，请使用 start.bat -Single -WithQq。"
-}
 if ($wantQq) {
     $composeArguments += @("--profile", "qq")
 }

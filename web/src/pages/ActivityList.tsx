@@ -3,13 +3,12 @@
  * 对应旧 frontend/activities-page.js + activities.html。
  * - GET /portal/activities 返回 { activities: ActivityItem[] }
  * - 状态映射：queued/running=排队中/执行中(amber)、ready=已就绪(green)、
- *   failed=失败(complex)、finished=已复盘(green)
+ *   failed=失败(complex)、finished=已结束(green)
  * - 列表项用 NavLink 跳 /activity/{id}
  */
-import { useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { api, useApi } from '../lib/api';
-import { useToast } from '../components/Toast';
+import DataState from '../components/DataState';
 import { formatDate } from '../lib/utils';
 import type { ActivityListResponse } from '../types';
 
@@ -19,18 +18,15 @@ const ACTIVITY_STATUS: Record<string, { label: string; cls: string }> = {
   running: { label: '执行中', cls: 'amber' },
   ready: { label: '已就绪', cls: 'green' },
   failed: { label: '失败', cls: 'complex' },
-  finished: { label: '已复盘', cls: 'green' },
+  finished: { label: '已结束', cls: 'green' },
+  waiting_input: { label: '等待补充信息', cls: 'amber' },
+  cancelled: { label: '已取消', cls: '' },
 };
 
 export default function ActivityList() {
-  const { showToast } = useToast();
-  const { data, loading, error } = useApi<ActivityListResponse>(() =>
+  const { data, loading, error, reload } = useApi<ActivityListResponse>(() =>
     api<ActivityListResponse>('/portal/activities'),
   );
-
-  useEffect(() => {
-    if (error) showToast(error, 'error');
-  }, [error, showToast]);
 
   const activities = data?.activities ?? [];
 
@@ -57,11 +53,9 @@ export default function ActivityList() {
           </div>
         </div>
 
-        {loading ? (
-          <div className="ws-empty">正在载入活动…</div>
-        ) : activities.length === 0 ? (
-          <div className="ws-empty">还没有活动，去 AI 助手用一句话发起</div>
-        ) : (
+        <DataState loading={loading} error={error} onRetry={reload} loadingText="正在载入活动…"
+          empty={!loading && !error && activities.length === 0} emptyText="还没有活动，去 AI 助手用一句话发起" />
+        {!loading && !error && activities.length > 0 && (
           <div className="ws-list">
             {activities.map((item) => {
               const status = ACTIVITY_STATUS[item.status] ?? {

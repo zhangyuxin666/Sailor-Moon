@@ -40,20 +40,23 @@ def ready():
 
 @app.post("/internal/ai/plan", dependencies=[Depends(require_internal_token)])
 def plan(body: PlanRequest):
-    context = rag.context(body.organization_id, body.raw_input)
-    return engine.plan(body.raw_input, body.available_assignees, context).model_dump()
+    context,evidence = rag.retrieve(body.organization_id, body.raw_input)
+    result=engine.plan(body.raw_input,body.available_assignees,context).model_dump()
+    result["generation"].update(evidence)
+    return result
 
 
 @app.post("/internal/ai/analyze-work-request", dependencies=[Depends(require_internal_token)])
 def analyze(body: WorkRequest):
-    context = rag.context(body.organization_id, body.raw_input)
-    return engine.analyze(body.raw_input, body.class_context, context).model_dump()
+    context,evidence = rag.retrieve(body.organization_id,body.raw_input)
+    result=engine.analyze(body.raw_input,body.class_context,context).model_dump()
+    result["generation"].update(evidence)
+    return result
 
 
 @app.post("/internal/ai/recap", dependencies=[Depends(require_internal_token)])
 def recap(body: RecapRequest):
-    context = rag.context(body.organization_id, body.activity_title)
-    return {"recap": engine.recap(body.activity_title, body.stats, body.task_summary, context)}
+    return engine.recap_result(body.activity_title,body.stats,body.task_summary)
 
 
 @app.post("/internal/ai/reply", dependencies=[Depends(require_internal_token)])
@@ -64,10 +67,13 @@ def reply(body: ReplyRequest):
 
 @app.post("/internal/ai/embed", dependencies=[Depends(require_internal_token)])
 def embed(body: EmbedRequest):
-    return {"embedding": rag.embeddings.create(body.text)}
+    return {"embedding": rag.embeddings.create(body.text), "embedding_profile":rag.embeddings.profile()}
 
 
 @app.post("/internal/rag/search", dependencies=[Depends(require_internal_token)])
 def search(body: RagSearchRequest):
-    results = rag.search(body.organization_id, body.query, body.top_k)
-    return {"results": results}
+    try:
+        results=[r for r in rag.search(body.organization_id,body.query,body.top_k) if float(r.get("score") or 0)>0.05]
+        return {"results":results,"retrieval_status":"used" if results else "empty","embedding_profile":rag.embeddings.profile()}
+    except Exception:
+        return {"results":[],"retrieval_status":"unavailable","embedding_profile":rag.embeddings.profile()}

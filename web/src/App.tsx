@@ -21,6 +21,9 @@ import ActivityList from './pages/ActivityList';
 import ActivityDetail from './pages/ActivityDetail';
 import PublicForm from './pages/PublicForm';
 import Privacy from './pages/Privacy';
+import Knowledge from './pages/Knowledge';
+import Participation from './pages/Participation';
+import Templates from './pages/Templates';
 
 export default function App() {
   return (
@@ -34,12 +37,15 @@ export default function App() {
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route path="/portal" element={<Portal />} />
         <Route path="/assignments" element={<Assignments />} />
+        <Route path="/participation" element={<Participation />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
 
       {/* 需管理者的页面 */}
       <Route element={<RequireManager><Layout /></RequireManager>}>
         <Route path="/agent" element={<Agent />} />
+        <Route path="/knowledge" element={<Knowledge />} />
+        <Route path="/templates" element={<Templates />} />
         <Route path="/members" element={<Members />} />
         <Route path="/activity" element={<ActivityList />} />
         <Route path="/activity/:id" element={<ActivityDetail />} />

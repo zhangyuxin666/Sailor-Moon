@@ -82,7 +82,7 @@ public class AuthService {
         recent.removeIf(stamp -> stamp < cutoff);
         if (recent.size() >= 5) throw new ApiException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "登录失败次数过多，请 5 分钟后再试");
         Map<String, Object> row = db.one("SELECT a.*, COALESCE(s.force_password_change,0) AS force_password_change " +
-                "FROM accounts a LEFT JOIN account_security s ON s.account_id=a.id WHERE a.username=? AND a.status='active'", body.username()).orElse(null);
+                "FROM accounts a LEFT JOIN account_security s ON s.account_id=a.id WHERE a.username=? AND a.status='active' FOR UPDATE OF a", body.username()).orElse(null);
         if (row == null || !passwords.verify(body.password(), String.valueOf(row.get("password_hash")))) {
             recent.add(System.currentTimeMillis());
             loginAttempts.put(key, recent);
@@ -117,12 +117,14 @@ public class AuthService {
 
     @Transactional
     public void changePassword(AccountPrincipal account, String currentPassword, String newPassword) {
-        String encoded = String.valueOf(db.required("SELECT password_hash FROM accounts WHERE id=?", account.id()).get("password_hash"));
+        String encoded = String.valueOf(db.required("SELECT password_hash FROM accounts WHERE id=? FOR UPDATE", account.id()).get("password_hash"));
         if (!passwords.verify(currentPassword, encoded)) throw ApiException.badRequest("当前密码错误");
+        if (passwords.verify(newPassword, encoded)) throw ApiException.badRequest("新密码不能与当前密码相同");
         setPassword(account.id(), newPassword, false);
         audits.write("account.password_change", account.id(), organizationOf(account.id()), "account", account.id(), null);
     }
 
+    @Transactional
     public void setPassword(String accountId, String password, boolean forceChange) {
         String now = LocalDateTime.now().toString();
         db.update("UPDATE accounts SET password_hash=? WHERE id=?", passwords.hash(password), accountId);
@@ -130,6 +132,8 @@ public class AuthService {
                 forceChange ? 1 : 0, now, accountId);
         if (updated == 0) db.update("INSERT INTO account_security (account_id, force_password_change, failed_logins, password_changed_at) VALUES (?, ?, 0, ?)",
                 accountId, forceChange ? 1 : 0, now);
+        // A reset invalidates every device, including sessions created before a concurrent reset committed.
+        db.update("DELETE FROM auth_sessions WHERE account_id=?", accountId);
     }
 
     public AccountPrincipal principal(Map<String, Object> row) {

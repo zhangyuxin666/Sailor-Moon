@@ -11,6 +11,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      '/participation/activities': 'http://127.0.0.1:8080',
+      '/business-templates': 'http://127.0.0.1:8080',
+      '/notifications': 'http://127.0.0.1:8080',
+      '/runs': 'http://127.0.0.1:8080',
+      '/knowledge/': 'http://127.0.0.1:8080',
       '/auth': 'http://127.0.0.1:8080',
       '/portal': 'http://127.0.0.1:8080',
       '/agent': 'http://127.0.0.1:8080',

@@ -6,6 +6,7 @@ import com.activityassistant.service.ClassroomService;
 import com.activityassistant.service.StorageService;
 import com.activityassistant.support.ApiException;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.ContentDisposition;
@@ -16,6 +17,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -49,6 +51,19 @@ public class ClassroomController {
                                     @Valid @RequestBody ApiModels.ClassCreateRequest body) {
         return classroom.createClass(AuthController.required(authentication), body.name());
     }
+
+    @GetMapping("/classes/{classId}/qq-bindings")
+    Map<String, Object> qqBindings(Authentication authentication, @PathVariable String classId) {
+        return classroom.classQqBindings(AuthController.required(authentication), classId);
+    }
+
+    @PutMapping("/classes/{classId}/qq-binding")
+    Map<String, Object> bindQqGroup(Authentication authentication, @PathVariable String classId,
+                                   @Valid @RequestBody ClassQqBindingRequest body) {
+        return classroom.bindClassGroup(AuthController.required(authentication), classId, body.groupOpenid());
+    }
+
+    public record ClassQqBindingRequest(@Size(max = 255) String groupOpenid) {}
 
     @PostMapping("/classes/{classId}/members")
     Map<String, Object> importMembers(Authentication authentication, @PathVariable String classId,
