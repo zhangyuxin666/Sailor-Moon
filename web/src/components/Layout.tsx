@@ -13,6 +13,7 @@ const navItems = [
   { to: '/portal', label: '总览', icon: '◈', managerOnly: false },
   { to: '/agent', label: 'AI助手', icon: '✦', managerOnly: true },
   { to: '/assignments', label: '作业与待办', icon: '☰', managerOnly: false },
+  { to: '/file-center', label: '文件中心', icon: '⤒', managerOnly: false },
   { to: '/activity', label: '活动管理', icon: '▣', managerOnly: true },
   { to: '/members', label: '成员管理', icon: '◉', managerOnly: true },
   { to: '/settings', label: '设置', icon: '⚙', managerOnly: false },

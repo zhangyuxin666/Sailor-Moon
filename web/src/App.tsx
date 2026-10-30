@@ -17,6 +17,7 @@ import Agent from './pages/Agent';
 import Assignments from './pages/Assignments';
 import Members from './pages/Members';
 import Settings from './pages/Settings';
+import Files from './pages/Files';
 import ActivityList from './pages/ActivityList';
 import ActivityDetail from './pages/ActivityDetail';
 import PublicForm from './pages/PublicForm';
@@ -34,6 +35,7 @@ export default function App() {
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route path="/portal" element={<Portal />} />
         <Route path="/assignments" element={<Assignments />} />
+        <Route path="/file-center" element={<Files />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
 

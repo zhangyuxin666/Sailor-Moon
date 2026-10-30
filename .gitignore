@@ -15,3 +15,6 @@ backups/
 .run/
 .idea/
 *.iml
+*.tsbuildinfo
+experiment2_submission/
+软件工程伦理结课作业/

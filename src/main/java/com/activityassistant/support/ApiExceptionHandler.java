@@ -19,6 +19,24 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(exception.status()).body(Map.of("detail", exception.getMessage()));
     }
 
+    @ExceptionHandler(ChunkChecksumException.class)
+    ResponseEntity<Map<String, Object>> chunkChecksum(ChunkChecksumException exception) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "detail", exception.getMessage(),
+                "code", "CHUNK_CHECKSUM_MISMATCH",
+                "chunk_index", exception.chunkIndex(),
+                "expected", exception.expected(),
+                "actual", exception.actual()));
+    }
+
+    @ExceptionHandler(MissingChunksException.class)
+    ResponseEntity<Map<String, Object>> missingChunks(MissingChunksException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "detail", exception.getMessage(),
+                "code", "MISSING_CHUNKS",
+                "missing", exception.missing()));
+    }
+
     @ExceptionHandler({MethodArgumentNotValidException.class, ConstraintViolationException.class,
             MissingServletRequestParameterException.class})
     ResponseEntity<Map<String, String>> validation(Exception exception) {
