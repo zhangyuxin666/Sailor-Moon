@@ -42,6 +42,10 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/activity
       SPRING_DATASOURCE_USERNAME: activity
+      DB_READ_ENABLED: ${DB_READ_ENABLED:-false}
+      DB_READ_URL: ${DB_READ_URL:-jdbc:postgresql://postgres-replica:5432/activity?connectTimeout=2&socketTimeout=4}
+      DB_READ_USERNAME: activity_reader
+      DB_READ_PASSWORD: ${DB_READ_PASSWORD:-}
       SPRING_DATASOURCE_PASSWORD: activity
       AI_SERVICE_URL: http://ai:8000
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-change-this-local-ai-token}

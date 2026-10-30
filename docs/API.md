@@ -303,3 +303,7 @@ V7 增加知识版本/模型标识以及 activity_recaps。旧版未保存的复
 - `POST /business-templates/{id}/apply`：提交 `class_id`、`request_id`；仅可应用到当前组织内可管理的班级，返回 `draft_id`、`status=draft`、`idempotent`。相同请求复用同一草案，标识用于其他模板或班级返回409。
 
 从历史草案/活动保存时只复制白名单结构：保留问卷类型及任务依赖，旧自由文本换成占位，清空物料、日期、旧身份和运行数据；需在基础表单或高级蓝图编辑器填写通用内容。应用模板创建新的待确认草案，日期和负责人须重新确认，群发布默认关闭；不会自动发布、创建活动或发送消息，后续仍走原草案保存与确认发布流程。
+
+## 数据库分流状态
+
+`GET /cluster/database`：需要有效登录且为管理者。返回 `enabled`、`replica_queries`、`primary_fallbacks` 和 `policy`，不返回连接信息或密钥。计数按当前 Tomcat 实例累计，重启清零。此接口说明配置及实际路由计数，不代表数据库自动故障切换。详细验证步骤见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。

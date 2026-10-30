@@ -57,3 +57,12 @@ AI 不创建业务实体，网关不代替组织权限校验，业务副作用�
 [数据库脚本说明](DATABASE.md) 解释 V1–V8，SQL 为字段/约束的准确信息。Java 测试位于 `src/test/java`，AI 测试位于 `tests_ai`，前端测试位于 `web/tests`，网关测试由其 `package.json` 指定。命令统一见 [DEVELOPMENT.md](DEVELOPMENT.md)，本文不重复测试数量或声称全部通过。
 
 修改业务时从功能主责出发，联动 Controller、服务、前端类型/页面、API 文档及必要测试；结构变化增加 Flyway 迁移，不改已执行的历史脚本。真实密钥、业务附件、临时截图和个人任务记录不属于共享源码交付。
+
+## 数据库读写分离入口
+
+- `persistence/ReplicaReads.java`：独立只读连接池、WAL 同步屏障、事务保持主库、从库异常降级和计数。
+- `persistence/Db.java`：原有主库方法和显式 `readList` 入口；调用点位于 `ActivityService`、`ActivityManagementService`、`ManagementController`。
+- `api/DatabaseRoutingController.java`：仅管理者可访问的 `/cluster/database` 状态接口。
+- `compose.replication.yml`、`scripts/postgres/`：复制账号、只读权限、主库 WAL 配置、从库基准备份与持久化。
+- `scripts/test_readwrite.py`：独立项目中的真实复制、分流、延迟/断开/恢复及权限验收。
+- 使用与维护见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。

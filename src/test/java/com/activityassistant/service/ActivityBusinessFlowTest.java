@@ -72,7 +72,7 @@ class ActivityBusinessFlowTest {
         when(db.one("SELECT user_id FROM activities WHERE id=?", "activity")).thenReturn(Optional.of(Map.of("user_id", "owner")));
         when(db.required("SELECT * FROM activities WHERE id=?", "activity")).thenReturn(Map.of("id", "activity", "status", "failed"));
         when(runs.byRef("activity", "activity")).thenReturn(Map.of("id", "run"));
-        when(db.list("SELECT * FROM steps WHERE activity_id=? ORDER BY id", "activity")).thenReturn(List.of(Map.of("step", "plan", "status", "failed", "attempts", 3, "detail", "Authorization: Bearer fake-secret", "error", "postgresql://user:fake-password@localhost/db", "result_json", "fake-secret")));
+        when(db.readList("SELECT * FROM steps WHERE activity_id=? ORDER BY id", "activity")).thenReturn(List.of(Map.of("step", "plan", "status", "failed", "attempts", 3, "detail", "Authorization: Bearer fake-secret", "error", "postgresql://user:fake-password@localhost/db", "result_json", "fake-secret")));
         Map<String, Object> result = service.detail("activity", "owner");
         assertThat(result).containsEntry("run_id", "run");
         Map<String, Object> step = ((List<Map<String, Object>>)result.get("steps")).get(0);

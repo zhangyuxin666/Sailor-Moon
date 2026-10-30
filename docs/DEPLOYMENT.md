@@ -145,3 +145,7 @@ docker ps --filter "label=com.docker.compose.project=$targetProject" --format "t
 - **QQ 失败/unknown**：核对凭据、当前组织群绑定、网关健康及持久结果，再使用授权核对入口；不要盲目重发。
 
 本文是部署说明，不能替代具体环境的构建、回归与恢复验收记录。
+
+## PostgreSQL 一主一从与读写分离
+
+在 `.env` 设置 `DB_READ_PASSWORD`、`DB_REPLICATION_PASSWORD` 后，使用 `start.bat -ReadWriteSplit -Build`；该参数同时支持 `-Single`。现有主库数据卷保留，增加独立从库卷和复制初始化服务，主库配置更新会短暂重启。生产 Compose 也可叠加 `compose.replication.yml`。完整启用、验证、故障处理及恢复顺序见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。备份前还需停止从库，恢复完成后以全新从库卷重新复制。

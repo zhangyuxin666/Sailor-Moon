@@ -1,0 +1,2 @@
+scripts/postgres/*.sh text eol=lf
+scripts/postgres/*.conf text eol=lf

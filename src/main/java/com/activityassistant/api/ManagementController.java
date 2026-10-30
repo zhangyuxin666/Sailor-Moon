@@ -13,7 +13,7 @@ public class ManagementController {
     private final ActivityManagementService activities;private final RegistrationService registrations;private final TaskManagementService tasks;private final Db db;
     public ManagementController(ActivityManagementService activities,RegistrationService registrations,TaskManagementService tasks,Db db){this.activities=activities;this.registrations=registrations;this.tasks=tasks;this.db=db;}
     @GetMapping("/notifications")
-    public Map<String,Object> notifications(Authentication auth){return Map.of("notifications",db.list("SELECT id,activity_id,content,created_at FROM messages WHERE recipient_account_id=? ORDER BY id DESC LIMIT 100",AuthController.required(auth).id()));}
+    public Map<String,Object> notifications(Authentication auth){return Map.of("notifications",db.readList("SELECT id,activity_id,content,created_at FROM messages WHERE recipient_account_id=? ORDER BY id DESC LIMIT 100",AuthController.required(auth).id()));}
     @PutMapping("/activities/{id}/registration-settings")
     public Map<String,Object> settings(Authentication auth,@PathVariable String id,@RequestBody JsonNode input){return registrations.settings(id,AuthController.required(auth),input);}
     @PostMapping("/forms/{formId}/registrations/{registrationId}/receipt")

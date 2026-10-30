@@ -37,6 +37,12 @@ management:
         enabled: true
 
 app:
+  database:
+    read-enabled: ${DB_READ_ENABLED:false}
+    read-url: ${DB_READ_URL:jdbc:postgresql://postgres-replica:5432/activity?connectTimeout=2&socketTimeout=4}
+    read-username: ${DB_READ_USERNAME:activity_reader}
+    read-password: ${DB_READ_PASSWORD:}
+    read-pool-size: ${DB_READ_POOL_SIZE:5}
   public-base-url: ${PUBLIC_BASE_URL:http://127.0.0.1:8080}
   cookie-secure: ${COOKIE_SECURE:false}
   session-days: ${SESSION_DAYS:7}

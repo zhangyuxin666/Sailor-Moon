@@ -53,3 +53,9 @@ FROM flyway_schema_history ORDER BY installed_rank;
 使用 [scripts/migrate_sqlite_to_postgres.py](../scripts/migrate_sqlite_to_postgres.py) 前，先启动 Java 服务完成目标建表。脚本按共有列非覆盖复制并使用 `ON CONFLICT DO NOTHING`，不会自动修复历史账号、组织和向量语义；保留源库，核对记录和旧上传文件后再归档。命令示例见 README。
 
 备份和恢复须一起保存数据库、附件以及 QQ 网关持久日志；镜像和 SQL 结构不能代替这些数据。[backup.ps1](../scripts/backup.ps1) 与 [restore.ps1](../scripts/restore.ps1) 要求显式项目名并先停止除 PostgreSQL 外的所有服务；恢复只接受新隔离项目的空数据库和空附件/日志存储，不先运行 Flyway，也不覆盖已有数据。完整命令及校验边界见 [DEPLOYMENT.md](DEPLOYMENT.md)。恢复到独立环境后需实际核对数据、文件下载、组织权限和投递状态，本文件不表示恢复已经验收完成。
+
+## 数据复制与读写分离
+
+启用 `compose.replication.yml` 后，`postgres` 是唯一写入主库，`postgres-replica` 是 PostgreSQL 16 物理流复制从库，分别使用 `postgres_data` 和 `postgres_replica_data`。`activity_replicator` 仅承担复制；`activity_reader` 仅有 public 表的 SELECT 权限，后续主账号创建的表也自动授予 SELECT。Flyway 只连接主库。复制槽限制 WAL 保留为 1GB，过期从库需要以新空卷重建，不能覆盖主库卷。
+
+应用仅对审查后的 `Db.readList` 路径使用从库；以主库 WAL 位置检查从库同步进度，落后/失效则回主库。事务、权限、报名名额、复盘快照和一致性导出仍在主库完成。启动、权限验证、复制状态及备份恢复注意事项见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。

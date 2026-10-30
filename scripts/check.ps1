@@ -31,6 +31,7 @@ $safeEnvironment = @{
     COMPOSE_DISABLE_ENV_FILE = "true"; COMPOSE_PROJECT_NAME = $testProject
     COMPOSE_FILE = ""; COMPOSE_PROFILES = ""; COMPOSE_ENV_FILES = ""
     POSTGRES_PASSWORD = "ci-only-password"; DOMAIN = "ci.invalid"
+    DB_READ_ENABLED = "false"; DB_READ_PASSWORD = "ci-only-reader-password"; DB_REPLICATION_PASSWORD = "ci-only-replication-password"
     AI_INTERNAL_TOKEN = "ci-only-ai-token"; QQ_GATEWAY_TOKEN = "ci-only-gateway-token"
     QQ_BOT_APP_ID = ""; QQ_BOT_APP_SECRET = ""; QQ_SANDBOX = "true"
     LLM_API_KEY = ""; EMBEDDING_API_KEY = ""; EMBEDDING_BASE_URL = ""
@@ -118,6 +119,10 @@ try {
             Copy-Item -LiteralPath (Join-Path $projectRoot $file) -Destination (Join-Path $scratch $file)
             Invoke-Checked "docker" @("compose", "--env-file", $emptyEnv, "--project-directory", $scratch, "-p", "sm-config-ci", "-f", (Join-Path $scratch $file), "--profile", "qq", "config", "--quiet")
             Write-Host "[check] $file validates with fake values and no local env files."
+        }
+        Copy-Item -LiteralPath (Join-Path $projectRoot 'compose.replication.yml') -Destination (Join-Path $scratch 'compose.replication.yml')
+        foreach ($file in @('compose.yml', 'compose.prod.yml', 'compose.cluster.yml')) {
+            Invoke-Checked 'docker' @('compose', '--env-file', $emptyEnv, '--project-directory', $scratch, '-p', 'sm-config-ci', '-f', (Join-Path $scratch $file), '-f', (Join-Path $scratch 'compose.replication.yml'), 'config', '--quiet')
         }
     }
     if ($WithE2E) {
