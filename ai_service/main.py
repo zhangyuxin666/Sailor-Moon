@@ -2,11 +2,11 @@ import hmac
 
 import psycopg
 from fastapi import Depends, FastAPI, Header, HTTPException
-
 from .config import settings
+from .chunker import split_document
 from .llm import AiEngine
-from .models import (EmbedRequest, PlanRequest, RagSearchRequest, RecapRequest,
-                     ReplyRequest, WorkRequest)
+from .models import (ChunkRequest, EmbedRequest, PlanRequest, RagSearchRequest,
+                     RecapRequest, ReplyRequest, WorkRequest)
 from .rag import RagStore
 
 app = FastAPI(
@@ -60,6 +60,22 @@ def recap(body: RecapRequest):
 def reply(body: ReplyRequest):
     context = rag.context(body.organization_id, body.message)
     return {"reply": engine.reply(body.message, body.activity_context, context)}
+
+
+@app.post("/internal/ai/chunk", dependencies=[Depends(require_internal_token)])
+def chunk(body: ChunkRequest):
+    """把完整文档切分成适合向量检索的小片段。"""
+
+    chunks = split_document(
+        content=body.content,
+        chunk_size=body.chunk_size,
+        overlap=body.overlap,
+    )
+
+    return {
+        "chunks": chunks,
+        "count": len(chunks),
+    }
 
 
 @app.post("/internal/ai/embed", dependencies=[Depends(require_internal_token)])

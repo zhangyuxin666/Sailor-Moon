@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class TaskItem(BaseModel):
@@ -93,7 +93,27 @@ class ReplyRequest(BaseModel):
 
 class EmbedRequest(BaseModel):
     text: str = Field(min_length=1, max_length=100_000)
+    
+class ChunkRequest(BaseModel):
+    """文档切分接口接收的请求数据。"""
 
+    # 需要切分的完整文档，不能为空，最多允许十万个字符
+    content: str = Field(min_length=1, max_length=100_000)
+
+    # 每个片段的目标最大长度
+    chunk_size: int = Field(default=500, ge=50, le=2_000)
+
+    # 相邻片段之间重复保留的字符数
+    overlap: int = Field(default=80, ge=0, le=500)
+
+    @model_validator(mode="after")
+    def validate_overlap(self):
+        """重叠长度必须小于片段长度。"""
+
+        if self.overlap >= self.chunk_size:
+            raise ValueError("overlap 必须小于 chunk_size")
+
+        return self
 
 class RagSearchRequest(BaseModel):
     organization_id: str | None = None
