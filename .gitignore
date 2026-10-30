@@ -15,6 +15,7 @@ backups/
 .run/
 .idea/
 *.iml
-
 # TypeScript incremental build cache
 *.tsbuildinfo
+experiment2_submission/
+软件工程伦理结课作业/

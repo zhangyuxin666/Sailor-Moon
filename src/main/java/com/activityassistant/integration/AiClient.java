@@ -49,6 +49,18 @@ public class AiClient {
         return response.path("reply").asText();
     }
 
+    public List<String> chunk(String content, int chunkSize, int overlap) {
+        JsonNode response = post("/internal/ai/chunk", Map.of(
+                "content", content,
+                "chunk_size", chunkSize,
+                "overlap", overlap));
+        if (!response.path("chunks").isArray())
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "AI 服务未返回有效的文档片段");
+        List<String> chunks = new ArrayList<>();
+        response.path("chunks").forEach(value -> chunks.add(value.asText()));
+        return chunks;
+    }
+
     public List<Double> embedding(String text) {
         JsonNode response = embeddingResult(text);
         if (!response.path("embedding").isArray())

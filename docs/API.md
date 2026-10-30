@@ -121,6 +121,30 @@ RAG 查询携带 `organization_id`，只返回本组织和全局文档。FastAPI
 - `POST /knowledge/documents`：仅管理者；Spring 调用 AI 嵌入接口并写入 pgvector，相同组织、来源和内容重复提交返回 `idempotent=true`。
 - `POST /knowledge/search`：登录用户；Spring 注入当前组织 ID 后调用内部 RAG 检索。
 
+## 文件中心
+
+所有接口要求登录会话，只能操作自己上传的文件（管理者可下载/删除他人的文件）。
+
+分片上传：
+
+- `POST /files/uploads`：创建上传会话。请求 `{filename, content_type, size, sha256?, chunk_size?}`，返回 `upload_id`、`chunk_size`、`total_chunks`、`uploaded`。若同一账号已存在相同 `sha256` 与大小的文件，直接返回 `instant=true` 与 `file_id`（秒传）。
+- `PUT /files/uploads/{upload_id}/chunks/{index}`：`application/octet-stream` 原始分片，`X-Chunk-Sha256` 声明分片摘要。摘要不匹配返回 `400` 且 `code=CHUNK_CHECKSUM_MISMATCH`、`chunk_index`，客户端据此重传该片。
+- `GET /files/uploads/{upload_id}`：返回 `uploaded` 数组，用于断点续传。
+- `POST /files/uploads/{upload_id}/complete`：按序合并分片并校验整文件 `sha256`；缺片返回 `409` 与 `code=MISSING_CHUNKS`、`missing`；整文件校验失败返回 `422`。
+- `DELETE /files/uploads/{upload_id}`：取消上传并清理已落盘分片。
+
+批量与列表：
+
+- `POST /files/batch`：`multipart/form-data`，字段名 `files`，一次多个小文件，返回每个文件的结果 `{filename, ok, file_id?, error?}`。
+- `GET /files/mine`：我的文件列表（`/files` 本身是前端页面路由）。
+- `DELETE /files/{file_id}`：删除文件与磁盘对象。
+
+下载：
+
+- `GET /files/{file_id}/download`：支持 `Range: bytes=start-end`，返回 `206` 与 `Content-Range`；越界返回 `416`；响应带 `Accept-Ranges: bytes` 与 `ETag`（文件 SHA-256）。断点续传与多线程并发下载都基于此接口。
+
+存储约定：最终文件在 `{STORAGE_LOCAL_PATH}/files/{account_id}/`，分片在 `{STORAGE_LOCAL_PATH}/chunks/{upload_id}/`，合并采用临时文件加原子移动。
+
 ## Agent 运行阶段
 
 `GET /runs/{run_id}` 返回后台任务状态、`agent_run`，以及编排协议字段 `context`、`result`、`next_actions`、`input`、`plan`；不直接返回 `agent_run` 内部的原始 JSON 列，历史和新错误均转为固定的安全提示。
