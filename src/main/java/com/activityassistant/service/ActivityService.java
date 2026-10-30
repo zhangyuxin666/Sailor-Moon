@@ -89,11 +89,11 @@ public class ActivityService {
     }
 
     public List<Map<String, Object>> list(AccountPrincipal account) {
-        if (account.isManager()) return db.list("SELECT DISTINCT a.*, ac.class_id FROM activities a JOIN activity_classes ac ON ac.activity_id=a.id " +
+        if (account.isManager()) return db.readList("SELECT DISTINCT a.*, ac.class_id FROM activities a JOIN activity_classes ac ON ac.activity_id=a.id " +
                 "JOIN class_organizations co ON co.class_id=ac.class_id JOIN organization_members om ON om.organization_id=co.organization_id " +
                 "WHERE om.account_id=? AND om.role IN ('owner','manager') AND a.user_id=? ORDER BY a.created_at DESC",
                 account.id(), account.username());
-        return db.list("SELECT DISTINCT a.id, a.title, a.status, a.created_at FROM activities a JOIN tasks t ON t.activity_id=a.id JOIN activity_task_assignees ata ON ata.task_id=t.id " +
+        return db.readList("SELECT DISTINCT a.id, a.title, a.status, a.created_at FROM activities a JOIN tasks t ON t.activity_id=a.id JOIN activity_task_assignees ata ON ata.task_id=t.id " +
                 "WHERE ata.account_id=? ORDER BY a.created_at DESC", account.id());
     }
 
@@ -115,9 +115,9 @@ public class ActivityService {
         result.put("tasks", taskManagement.tasks(activityId));
         result.put("forms", db.list("SELECT * FROM forms WHERE activity_id=?", activityId));
         result.put("reminders", db.list("SELECT * FROM reminders WHERE activity_id=?", activityId));
-        result.put("steps", db.list("SELECT * FROM steps WHERE activity_id=? ORDER BY id", activityId)
+        result.put("steps", db.readList("SELECT * FROM steps WHERE activity_id=? ORDER BY id", activityId)
                 .stream().map(this::publicStep).toList());
-        result.put("deliveries", db.list("SELECT * FROM delivery_events WHERE activity_id=? ORDER BY created_at DESC", activityId)
+        result.put("deliveries", db.readList("SELECT * FROM delivery_events WHERE activity_id=? ORDER BY created_at DESC", activityId)
                 .stream().map(this::publicDelivery).toList());
         return result;
     }

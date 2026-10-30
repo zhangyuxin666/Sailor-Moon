@@ -161,3 +161,7 @@ start.bat -WithQq 或 docker compose -f compose.cluster.yml --profile qq up -d �
 qq_delivery_data 保存单实例网关的持久去重日志，两个 Tomcat 共用 PostgreSQL 的 outbound_deliveries。保留这些数据才能在重启后核对，不能运行两份网关共享文件目录。/runs/{id} 的 worker_instance、attempts 和租约诊断帮助定位接管节点；不向浏览器提供内部执行令牌。所有生产故障演练应先在独立环境复现。
 
 V6 升级须先停止旧版 Worker，核对并处理旧版在途外发，再整体更新节点；不要混跑缺少租约保护的旧节点。旧版失败/未知投递没有新协议的持久证据，须人工核对，不能将普通重试解释为安全重放。保留原数据库和网关卷，升级/回退前备份另按部署流程完成。
+
+## 数据库主从复制
+
+两个 Tomcat 的负载均衡与数据库读写分离是两层能力。原启动命令仍使用单数据库；设置独立的只读/复制密码后，执行 `start.bat -ReadWriteSplit -Build` 才会叠加 `compose.replication.yml` 并启用从库查询。可通过 `/cluster/database` 计数与 `pg_stat_replication` 同时验证。完整步骤见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。

@@ -46,6 +46,8 @@ jobs:
         run: pwsh -NoProfile -File scripts/test-backup-contract.ps1
       - name: Unit, type, package, Compose and isolated PostgreSQL E2E checks
         run: ./scripts/check.ps1 -WithE2E -ResultsDirectory $env:CHECK_RESULTS_DIR
+      - name: PostgreSQL physical replication and Java read routing
+        run: python scripts/test_readwrite.py --output "$env:CHECK_RESULTS_DIR/readwrite.json"
       - name: Retain offline acceptance reports
         if: always()
         uses: actions/upload-artifact@v7.0.2

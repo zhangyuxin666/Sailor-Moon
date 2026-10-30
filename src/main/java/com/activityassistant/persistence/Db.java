@@ -14,6 +14,7 @@ import java.util.Optional;
 public class Db {
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate named;
+    private ReplicaReads replicaReads;
 
     public Db(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
@@ -31,6 +32,14 @@ public class Db {
 
     public List<Map<String, Object>> list(String sql, Object... args) {
         return jdbc.queryForList(sql, args);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureReplica(ReplicaReads replicaReads) { this.replicaReads = replicaReads; }
+
+    /** Only reviewed read paths opt in. Writes, authorization and transactional queries use list/one. */
+    public List<Map<String, Object>> readList(String sql, Object... args) {
+        return replicaReads == null ? list(sql, args) : replicaReads.list(sql, args);
     }
 
     public int update(String sql, Object... args) {

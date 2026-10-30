@@ -91,7 +91,7 @@ public class ActivityManagementService {
     public List<Map<String,Object>> changes(String id,AccountPrincipal actor) {
         var activity=db.one("SELECT * FROM activities WHERE id=?",id).orElseThrow(()->ApiException.notFound("活动不存在"));
         if(!actor.isManager() || !actor.username().equals(activity.get("user_id")))throw ApiException.forbidden("无权查看活动变更");
-        List<Map<String,Object>> rows=db.list("SELECT id,kind,result_json,content,notification_status,error,created_at,completed_at FROM activity_changes WHERE activity_id=? ORDER BY created_at DESC,id",id);
+        List<Map<String,Object>> rows=db.readList("SELECT id,kind,result_json,content,notification_status,error,created_at,completed_at FROM activity_changes WHERE activity_id=? ORDER BY created_at DESC,id",id);
         for(var row:rows){row.put("result",gate.parse(row.remove("result_json")));row.put("error",PublicErrors.message(row.get("error")));}return rows;
     }
     @Transactional

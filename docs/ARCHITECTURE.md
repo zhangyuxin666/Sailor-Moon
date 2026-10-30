@@ -110,3 +110,7 @@ ParticipationService 复用 ActivityGate 的活动锁协调开放设置、签到
 ExportService 在授权和组织校验后显式查询必要列，CsvExport 统一输出 UTF-8 BOM、RFC4180 及公式防护；ExportController 固定下载文件名并禁用缓存。浏览器使用同源会话下载，不建立公开导出链接，不序列化数据库内部字段。
 
 TemplateService 将可复用蓝图与活动执行数据分开存储；历史来源只抽取脱敏结构，本组织模板按创建者及版本维护，内置模板只读。应用在事务内按账号/请求标识去重，只写新的 agent_drafts，继续由既有确认发布链路产生副作用。`/business-templates` 承载业务 API，`/templates` 由 React 承载，来源选择通过受限 `/business-templates/sources` 获取。
+
+## 可选数据库读写分离
+
+默认双 Tomcat 共用单主库；叠加 `compose.replication.yml` 并启用 `DB_READ_ENABLED` 后，新增物理流复制从库。每个 Tomcat 的默认 JDBC 连接仍指向主库，`ReplicaReads` 单独管理只读连接池。活动列表、步骤/投递/变更记录和通知查询显式使用 `Db.readList`，先检查主库 WAL 同步屏障；复制落后或断开时回主库。所有事务与权限校验保持主库，AI/RAG 仍连接主库。该方案没有自动主库选举，具体边界见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。
