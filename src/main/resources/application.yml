@@ -5,7 +5,7 @@ server:
 spring:
   servlet:
     multipart:
-      # 单文件上限由业务层 APP 的 upload-max-mb 控制；这里给批量上传留出请求总大小
+      # 单文件上限由业务层 app.upload-max-mb 控制；这里给批量上传留出请求总大小
       max-file-size: ${UPLOAD_MAX_MB:20}MB
       max-request-size: 128MB
   application:
@@ -38,6 +38,12 @@ management:
         enabled: true
 
 app:
+  database:
+    read-enabled: ${DB_READ_ENABLED:false}
+    read-url: ${DB_READ_URL:jdbc:postgresql://postgres-replica:5432/activity?connectTimeout=2&socketTimeout=4}
+    read-username: ${DB_READ_USERNAME:activity_reader}
+    read-password: ${DB_READ_PASSWORD:}
+    read-pool-size: ${DB_READ_POOL_SIZE:5}
   public-base-url: ${PUBLIC_BASE_URL:http://127.0.0.1:8080}
   cookie-secure: ${COOKIE_SECURE:false}
   session-days: ${SESSION_DAYS:7}

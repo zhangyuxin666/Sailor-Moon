@@ -3,9 +3,21 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+class AssigneeCandidate(BaseModel):
+    account_id: str = Field(min_length=1, max_length=32)
+    display_name: str = Field(min_length=1)
+
+
 class TaskItem(BaseModel):
     title: str
-    assignee: str
+    description: str = ""
+    deadline: str = ""
+    priority: Literal["low", "normal", "high", "urgent"] = "normal"
+    key: str = ""
+    depends_on: list[str] = Field(default_factory=list)
+    account_id: str = ""
+    assignee: str = ""
+    unassigned_reason: str = ""
 
 
 class FormField(BaseModel):
@@ -26,7 +38,18 @@ class ToolIntent(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class GenerationInfo(BaseModel):
+    mode: Literal["model", "offline"] = "offline"
+    fallback_reason: str = "not_configured"
+    retrieval_status: Literal["used", "empty", "unavailable"] = "empty"
+    embedding_profile: str = ""
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    pending_fields: list[str] = Field(default_factory=list)
+
+
 class ActivityPlan(BaseModel):
+    generation: GenerationInfo = Field(default_factory=GenerationInfo)
+    requires_event_time: bool = True
     title: str
     description: str = ""
     event_time: str = ""
@@ -48,6 +71,7 @@ class WorkflowConfig(BaseModel):
 
 
 class WorkDraft(BaseModel):
+    generation: GenerationInfo = Field(default_factory=GenerationInfo)
     intent_type: Literal["assignment", "activity", "survey", "notice"]
     complexity: Literal["simple", "standard", "complex"]
     title: str
@@ -68,7 +92,7 @@ class WorkDraft(BaseModel):
 
 class PlanRequest(BaseModel):
     raw_input: str
-    available_assignees: list[str] = Field(default_factory=list)
+    available_assignees: list[AssigneeCandidate] = Field(default_factory=list)
     organization_id: str = ""
 
 

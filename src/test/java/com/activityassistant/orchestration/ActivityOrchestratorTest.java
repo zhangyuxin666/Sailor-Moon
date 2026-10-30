@@ -41,7 +41,7 @@ class ActivityOrchestratorTest {
         FakeQqService qq = new FakeQqService();
         FakeJournal journal = new FakeJournal();
         ActivityOrchestrator orchestrator = new ActivityOrchestrator(
-                db, agentRuns, ai, qq, mapper, properties(), journal);
+                db, agentRuns, ai, qq, mapper, properties(), journal, null);
 
         // 学习点: Act：只执行一次完整的活动编排。
         Map<String, Object> result = orchestrator.run("a1");
@@ -78,7 +78,7 @@ class ActivityOrchestratorTest {
         FakeQqService qq = new FakeQqService();
         FakeJournal journal = new FakeJournal();
         ActivityOrchestrator orchestrator = new ActivityOrchestrator(
-                db, agentRuns, ai, qq, mapper, properties(), journal);
+                db, agentRuns, ai, qq, mapper, properties(), journal, null);
 
         Map<String, Object> first = orchestrator.run("a1");
         Map<String, Object> second = orchestrator.run("a1");
@@ -107,7 +107,7 @@ class ActivityOrchestratorTest {
         FakeQqService qq = new FakeQqService();
         FakeJournal journal = new FakeJournal();
         ActivityOrchestrator orchestrator = new ActivityOrchestrator(
-                db, agentRuns, ai, qq, mapper, properties(), journal);
+                db, agentRuns, ai, qq, mapper, properties(), journal, null);
 
         orchestrator.run("a1");
 
@@ -116,6 +116,84 @@ class ActivityOrchestratorTest {
                 .contains("plan a welcome event")
                 .contains("用户补充信息")
                 .contains("2026-10-20T19:00:00");
+    }
+
+
+    @Test
+    void confirmedSnapshotExecutesReviewedQuestionsWithoutCallingAi() throws Exception {
+        com.fasterxml.jackson.databind.node.ObjectNode plan = (com.fasterxml.jackson.databind.node.ObjectNode) samplePlan();
+        plan.put("plan_source", "confirmed_draft").put("title", "Reviewed survey");
+        plan.set("form_fields", mapper.readTree("""
+                [{"name":"destination","label":"Destination","type":"select","options":["Park","Museum"],"required":true},
+                 {"name":"contact","label":"School email","type":"text","required":true},
+                 {"name":"name","label":"Your name","type":"text","required":true}]
+                """));
+        Map<String, Object> activity = activityWithPlan(plan);
+        FakeDb db = new FakeDb(activity);
+        FakeAiClient ai = new FakeAiClient(properties(), samplePlan());
+        ActivityOrchestrator orchestrator = new ActivityOrchestrator(
+                db, new FakeAgentRuns(), ai, new FakeQqService(), mapper, properties(), new FakeJournal(), null);
+
+        Map<String, Object> result = orchestrator.run("a1");
+
+        assertThat(ai.planCalls).isZero();
+        assertThat(mapper.readTree(db.formFieldsJson)).isEqualTo(plan.path("form_fields"));
+        assertThat(((JsonNode) result.get("plan")).path("title").asText()).isEqualTo("Reviewed survey");
+    }
+
+    @Test
+    void confirmedEmptyWorkflowDoesNotFallBackToExecutingAllTools() throws Exception {
+        com.fasterxml.jackson.databind.node.ObjectNode plan = (com.fasterxml.jackson.databind.node.ObjectNode) samplePlan();
+        plan.put("plan_source", "confirmed_draft");
+        plan.set("tool_intents", mapper.createArrayNode());
+        FakeDb db = new FakeDb(activityWithPlan(plan));
+        FakeAiClient ai = new FakeAiClient(properties(), samplePlan());
+        FakeQqService qq = new FakeQqService();
+        FakeJournal journal = new FakeJournal();
+        ActivityOrchestrator orchestrator = new ActivityOrchestrator(
+                db, new FakeAgentRuns(), ai, qq, mapper, properties(), journal, null);
+
+        orchestrator.run("a1");
+
+        assertThat(ai.planCalls).isZero();
+        assertThat(db.formInserts).isZero();
+        assertThat(db.taskInserts).isZero();
+        assertThat(db.reminderInserts).isZero();
+        assertThat(qq.sentContents).isEmpty();
+        assertThat(journal.steps()).doesNotContain("create_form", "assign_tasks", "create_calendar_event", "schedule_reminder", "publish_qq");
+    }
+
+    @Test
+    void failedStepIsRecordedAndRecoveryReusesTheSuccessfulPlan() throws Exception {
+        FakeDb db = new FakeDb(activityWithPlan(samplePlan()));
+        db.failForm = true;
+        FakeAiClient ai = new FakeAiClient(properties(), samplePlan());
+        FakeAgentRuns runs = new FakeAgentRuns();
+        FakeJournal journal = new FakeJournal();
+        ActivityOrchestrator orchestrator = new ActivityOrchestrator(
+                db, runs, ai, new FakeQqService(), mapper, properties(), journal, null);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> orchestrator.run("a1"))
+                .isInstanceOf(com.activityassistant.support.ApiException.class);
+        assertThat(journal.statuses).contains("create_form:failed");
+        assertThat(journal.statuses).doesNotContain("create_form:done");
+        assertThat(runs.events).contains("fail");
+
+        db.failForm = false;
+        orchestrator.run("a1");
+
+        assertThat(ai.planCalls).isZero();
+        assertThat(db.formInserts).isEqualTo(1);
+        assertThat(journal.statuses).contains("create_form:done");
+    }
+
+    private Map<String, Object> activityWithPlan(JsonNode plan) {
+        Map<String, Object> activity = new LinkedHashMap<>();
+        activity.put("id", "a1");
+        activity.put("raw_input", "plan a welcome event");
+        activity.put("title", "Welcome event");
+        activity.put("plan_json", plan.toString());
+        return activity;
     }
 
     private JsonNode samplePlan() throws Exception {
@@ -134,7 +212,7 @@ class ActivityOrchestratorTest {
                     {"tool": "publish_message"}
                   ],
                   "form_fields": [],
-                  "tasks": [{"title": "Buy water", "assignee": "Alice"}]
+                  "tasks": [{"title": "Buy water", "account_id": "acct-1", "assignee": "Alice"}]
                 }
                 """);
     }
@@ -149,8 +227,11 @@ class ActivityOrchestratorTest {
         private final Map<String, Object> activity;
         private final List<String> updates = new ArrayList<>();
         private final Set<String> taskKeys = new LinkedHashSet<>();
+        private final Map<String,Map<String,Object>> planTasks=new HashMap<>();
         private final Map<String, Map<String, Object>> reminders = new HashMap<>();
         private int formInserts;
+        private String formFieldsJson;
+        private boolean failForm;
         private int taskInserts;
         private int reminderInserts;
 
@@ -163,15 +244,17 @@ class ActivityOrchestratorTest {
         public Optional<Map<String, Object>> one(String sql, Object... args) {
             if (sql.equals("SELECT * FROM activities WHERE id=?")) return Optional.of(activity);
             if (sql.startsWith("SELECT config_json FROM activity_workflows")) return Optional.empty();
-            if (sql.startsWith("SELECT class_id FROM activity_classes")) {
-                return Optional.of(Map.of("class_id", "c1"));
+            if (sql.startsWith("SELECT class_id, organization_id FROM activity_classes")) {
+                return Optional.of(Map.of("class_id", "c1", "organization_id", "org-1"));
             }
-            if (sql.startsWith("SELECT 1 FROM tasks")) {
+            if(sql.startsWith("SELECT * FROM tasks WHERE activity_id=? AND plan_key=?"))return Optional.ofNullable(planTasks.get(String.valueOf(args[1])));
+            if (sql.startsWith("SELECT t.id FROM tasks")) {
                 return taskKeys.contains(args[1] + "\0" + args[2])
-                        ? Optional.of(Map.of("exists", 1)) : Optional.empty();
+                        ? Optional.of(Map.of("id",planTasks.values().iterator().next().get("id"))) : Optional.empty();
             }
             if (sql.startsWith("SELECT a.id FROM class_members")) return Optional.of(Map.of("id", 1L));
             if (sql.startsWith("SELECT * FROM reminders")) return Optional.ofNullable(reminders.get(String.valueOf(args[1])));
+            if (sql.startsWith("SELECT organization_id FROM activity_classes")) return Optional.of(Map.of("organization_id", "org-1"));
             if (sql.startsWith("SELECT group_openid FROM activity_channels")) {
                 return Optional.of(Map.of("group_openid", "group-1"));
             }
@@ -180,23 +263,29 @@ class ActivityOrchestratorTest {
 
         @Override
         public List<Map<String, Object>> list(String sql, Object... args) {
-            if (sql.startsWith("SELECT a.display_name FROM class_members")) {
-                return List.of(Map.of("display_name", "Alice"));
+            if(sql.startsWith("SELECT t.id FROM tasks"))return List.of();
+            if (sql.startsWith("SELECT a.id AS account_id, a.display_name FROM class_members")) {
+                return List.of(Map.of("account_id", "acct-1", "display_name", "Alice"));
             }
             throw new AssertionError("Unexpected query: " + sql);
         }
 
         @Override
         public int update(String sql, Object... args) {
-            updates.add(sql + " " + List.of(args));
+            updates.add(sql + " " + java.util.Arrays.asList(args));
             if (sql.startsWith("UPDATE activities SET title=?, plan_json=?")) {
                 activity.put("title", args[0]);
                 activity.put("plan_json", args[1]);
             }
-            if (sql.startsWith("INSERT INTO forms")) formInserts += 1;
+            if (sql.startsWith("INSERT INTO forms")) {
+                if (failForm) throw com.activityassistant.support.ApiException.badRequest("暂时无法创建表单");
+                formInserts += 1;
+                formFieldsJson = String.valueOf(args[3]);
+            }
             if (sql.startsWith("INSERT INTO tasks")) {
                 taskInserts += 1;
-                taskKeys.add(args[2] + "\0" + args[3]);
+                planTasks.put(String.valueOf(args[8]),Map.of("id",args[0]));
+                taskKeys.add(args[2] + "\0" + "acct-1");
             }
             if (sql.startsWith("INSERT INTO reminders")) {
                 reminderInserts += 1;
@@ -258,11 +347,12 @@ class ActivityOrchestratorTest {
         }
 
         @Override
-        public JsonNode plan(String rawInput, List<String> availableAssignees) {
+        public JsonNode plan(String rawInput, List<Map<String, Object>> availableAssignees, String organizationId) {
             planCalls += 1;
             inputs.add(rawInput);
             assertThat(rawInput).startsWith("plan a welcome event");
-            assertThat(availableAssignees).containsExactly("Alice");
+            assertThat(availableAssignees).containsExactly(Map.of("account_id", "acct-1", "display_name", "Alice"));
+            assertThat(organizationId).isEqualTo("org-1");
             return plan;
         }
     }
@@ -276,6 +366,11 @@ class ActivityOrchestratorTest {
         }
 
         @Override
+        public boolean isGroupAuthorized(String organizationId, String groupOpenid) {
+            return "org-1".equals(organizationId) && "group-1".equals(groupOpenid);
+        }
+
+        @Override
         public Map<String, Object> sendGroup(String groupOpenid, String content, String idempotencyKey) {
             sentContents.add(content);
             return Map.of("id", "qq-1");
@@ -285,6 +380,7 @@ class ActivityOrchestratorTest {
     private static final class FakeJournal extends ExecutionJournal {
         // 学习点: FakeJournal 用内存 Map 代替数据库，保存幂等结果并记录步骤顺序。
         private final List<Entry> entries = new ArrayList<>();
+        private final List<String> statuses = new ArrayList<>();
         private final Map<String, Map<String, Object>> saved = new HashMap<>();
 
         private FakeJournal() {
@@ -305,6 +401,7 @@ class ActivityOrchestratorTest {
         public void record(String activityId, String phase, String step, String status, String detail,
                            String idempotencyKey, Object input, Object output, String error) {
             entries.add(new Entry(step, idempotencyKey));
+            statuses.add(step + ":" + status);
         }
 
         private List<String> steps() {

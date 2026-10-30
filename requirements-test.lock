@@ -1,0 +1,9 @@
+# Install from repository root: python -m pip install -r requirements-test.lock
+# Runtime pins plus the existing pytest version and its observed test dependencies.
+-r requirements.txt
+-c ai_service/requirements.lock
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.7.0
+pytest==8.3.3
+tzdata==2026.5; sys_platform == "win32"

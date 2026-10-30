@@ -88,10 +88,11 @@ public class AuthController {
     }
 
     @PostMapping("/auth/change-password")
-    Map<String, String> changePassword(Authentication authentication,
-                                       @Valid @RequestBody ApiModels.PasswordChangeRequest body) {
+    ResponseEntity<Map<String, Object>> changePassword(Authentication authentication,
+                                                        @Valid @RequestBody ApiModels.PasswordChangeRequest body) {
         auth.changePassword(required(authentication), body.currentPassword(), body.newPassword());
-        return Map.of("status", "ok");
+        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, expiredCookie().toString())
+                .body(Map.of("status", "ok", "reauthenticate", true));
     }
 
     @PostMapping("/accounts/{accountId}/reset-password")
@@ -102,7 +103,14 @@ public class AuthController {
         if (!manager.isManager()) throw ApiException.forbidden("只有管理者可以重置成员密码");
         String organizationId = auth.organizationOf(manager.id());
         boolean allowed = db.one("SELECT 1 FROM accounts a JOIN organization_members om ON om.account_id=a.id " +
-                "WHERE a.id=? AND a.role='participant' AND om.organization_id=?", accountId, organizationId).isPresent();
+                        "WHERE a.id=? AND a.role='participant' AND a.status='active' AND om.organization_id=? " +
+                        "AND EXISTS (SELECT 1 FROM organization_members manager_membership " +
+                        "WHERE manager_membership.organization_id=om.organization_id AND manager_membership.account_id=? " +
+                        "AND manager_membership.role IN ('owner','manager')) " +
+                        "AND NOT EXISTS (SELECT 1 FROM organization_members other_membership " +
+                        "WHERE other_membership.account_id=a.id AND other_membership.organization_id<>om.organization_id) " +
+                        "FOR UPDATE OF a",
+                accountId, organizationId, manager.id()).isPresent();
         if (!allowed) throw ApiException.forbidden("无权重置该账号密码");
         auth.setPassword(accountId, body.newPassword(), true);
         audits.write("account.password_reset", manager.id(), organizationId, "account", accountId, null);

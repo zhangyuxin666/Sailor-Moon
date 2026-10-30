@@ -37,7 +37,7 @@ public class PageController {
     // ---- SPA 页面路由：全部返回 index.html ----
 
     @GetMapping({"/login", "/portal", "/agent", "/assignments", "/members",
-            "/settings", "/activity", "/privacy", "/file-center"})
+            "/settings", "/activity", "/participation", "/templates", "/knowledge", "/privacy", "/file-center"})
     ResponseEntity<ClassPathResource> spaPage() {
         return indexHtml();
     }

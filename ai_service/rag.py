@@ -10,6 +10,12 @@ from .config import settings
 
 
 class Embeddings:
+    def profile(self) -> str:
+        if settings.embedding_base_url and settings.embedding_api_key:
+            value=settings.embedding_base_url.rstrip('/')+"|"+settings.embedding_model+"|"+str(settings.embedding_dimensions)
+            return "remote:"+hashlib.sha256(value.encode()).hexdigest()[:32]
+        return "local_hash_v1:"+str(settings.embedding_dimensions)
+
     def create(self, text: str) -> list[float]:
         if settings.embedding_base_url and settings.embedding_api_key:
             response = httpx.post(
@@ -58,29 +64,32 @@ class RagStore:
         with self._connect() as connection, connection.cursor() as cursor:
             if organization_id:
                 cursor.execute(
-                    "SELECT id::text, source, content, metadata_json AS metadata, "
+                    "SELECT id::text, source, version, content, metadata_json AS metadata, "
                     "1 - (embedding <=> %s::vector) AS score "
                     "FROM rag_documents "
-                    "WHERE organization_id = %s OR organization_id IS NULL "
+                    "WHERE (organization_id = %s OR organization_id IS NULL) AND embedding_profile=%s "
                     "ORDER BY embedding <=> %s::vector LIMIT %s",
-                    (embedding, organization_id, embedding, top_k),
+                    (embedding, organization_id, self.embeddings.profile(), embedding, top_k),
                 )
             else:
                 cursor.execute(
-                    "SELECT id::text, source, content, metadata_json AS metadata, "
+                    "SELECT id::text, source, version, content, metadata_json AS metadata, "
                     "1 - (embedding <=> %s::vector) AS score "
-                    "FROM rag_documents WHERE organization_id IS NULL "
+                    "FROM rag_documents WHERE organization_id IS NULL AND embedding_profile=%s "
                     "ORDER BY embedding <=> %s::vector LIMIT %s",
-                    (embedding, embedding, top_k),
+                    (embedding, self.embeddings.profile(), embedding, top_k),
                 )
             return list(cursor.fetchall())
 
-    def context(self, organization_id: str, query: str) -> str:
+    def retrieve(self, organization_id: str, query: str) -> tuple[str,dict]:
+        profile=self.embeddings.profile()
         try:
-            results = self.search(organization_id or None, query, 4)
+            results=[item for item in self.search(organization_id or None,query,4) if float(item.get("score") or 0)>0.05]
         except Exception:
-            return ""
-        return "\n\n".join(
-            f"[知识库：{item['source']}]\n{item['content'][:1800]}" for item in results
-            if float(item.get("score") or 0) > 0.05
-        )
+            return "",{"retrieval_status":"unavailable","sources":[],"embedding_profile":profile}
+        sources=[{"id":item["id"],"source":item["source"],"version":item["version"],"excerpt":item["content"][:240],"score":float(item.get("score") or 0)} for item in results]
+        context="\n\n".join(f"[资料 {item['id']} v{item['version']}：{item['source']}]\n{item['content'][:1800]}" for item in results)
+        return context,{"retrieval_status":"used" if sources else "empty","sources":sources,"embedding_profile":profile}
+
+    def context(self,organization_id: str,query: str) -> str:
+        return self.retrieve(organization_id,query)[0]

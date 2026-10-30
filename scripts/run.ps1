@@ -5,7 +5,8 @@ param(
     [switch]$NoBrowser,
     [switch]$WithQq,
     [switch]$Build,
-    [switch]$Single
+    [switch]$Single,
+    [switch]$ReadWriteSplit
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,17 +42,26 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 }
 
 $env:APP_PORT = "$Port"
+$readWriteMode = $ReadWriteSplit -or ((Get-DotEnvValue 'DB_READ_ENABLED') -ieq 'true')
 $composeArguments = if ($clusterMode) {
     @("compose", "-f", "compose.cluster.yml")
 } else {
     @("compose")
 }
+if ($readWriteMode) {
+    foreach ($name in @('DB_READ_PASSWORD', 'DB_REPLICATION_PASSWORD')) {
+        if ([string]::IsNullOrWhiteSpace((Get-DotEnvValue $name))) {
+            throw "请先在 .env 中设置 $name（见 docs/READ_WRITE_SPLIT.md）。"
+        }
+    }
+    # An explicit base file is necessary when composing overlays in single-instance mode.
+    if (-not $clusterMode) { $composeArguments = @('compose', '-f', 'compose.yml') }
+    $composeArguments += @('-f', 'compose.replication.yml')
+    $env:DB_READ_ENABLED = 'true'
+} else { $env:DB_READ_ENABLED = 'false' }
 $qqAppId = Get-DotEnvValue "QQ_BOT_APP_ID"
 $qqSecret = Get-DotEnvValue "QQ_BOT_APP_SECRET"
 $wantQq = $WithQq -or (-not [string]::IsNullOrWhiteSpace($qqAppId) -and -not [string]::IsNullOrWhiteSpace($qqSecret))
-if ($wantQq -and $clusterMode) {
-    throw "QQ Gateway 暂只支持单实例模式，请使用 start.bat -Single -WithQq。"
-}
 if ($wantQq) {
     $composeArguments += @("--profile", "qq")
 }
@@ -88,6 +98,10 @@ if (-not $ready) {
     $logArguments = @("compose")
     if ($clusterMode) {
         $logArguments += @("-f", "compose.cluster.yml")
+    }
+    if ($readWriteMode) {
+        if (-not $clusterMode) { $logArguments += @('-f', 'compose.yml') }
+        $logArguments += @('-f', 'compose.replication.yml')
     }
     $logArguments += @("logs", "--tail", "100")
     if ($clusterMode) {

@@ -1,20 +1,32 @@
+# ============================================================
+# 活动管家 Tomcat 集群编排
+# 主要服务：PostgreSQL、AI、Tomcat app1、Tomcat app2、Nginx
+# ============================================================
 name: sailor-moon
 
 services:
+  # ------------------------------------------------------------
+  # PostgreSQL：两个 Tomcat 共用的数据库和登录会话存储。
+  # ------------------------------------------------------------
   postgres:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: activity
       POSTGRES_USER: activity
       POSTGRES_PASSWORD: activity
+    # 宿主机 55432 -> 容器内 PostgreSQL 5432。
     ports: ["127.0.0.1:55432:5432"]
     volumes: ["postgres_data:/var/lib/postgresql/data"]
     healthcheck:
+      # PostgreSQL 能接受连接后，才允许应用启动。
       test: ["CMD-SHELL", "pg_isready -U activity -d activity"]
       interval: 5s
       timeout: 3s
       retries: 15
 
+  # ------------------------------------------------------------
+  # FastAPI AI 服务：两个 Tomcat 共用一份 AI 服务。
+  # ------------------------------------------------------------
   ai:
     build:
       context: .
@@ -25,6 +37,7 @@ services:
     environment:
       DATABASE_URL: postgresql://activity:activity@postgres:5432/activity
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-change-this-local-ai-token}
+    # 宿主机 8000 -> 容器内 AI 服务 8000。
     ports: ["127.0.0.1:${AI_PORT:-8000}:8000"]
     depends_on:
       postgres: {condition: service_healthy}
@@ -34,6 +47,9 @@ services:
       timeout: 5s
       retries: 10
 
+  # ------------------------------------------------------------
+  # Tomcat 实例 1：运行活动管家完整 WAR。
+  # ------------------------------------------------------------
   app1:
     build:
       context: .
@@ -41,27 +57,45 @@ services:
     env_file:
       - path: .env
         required: false
+    # &app-environment 定义公共环境变量，app2 会复用这一组配置。
     environment: &app-environment
+      # 两个 Tomcat 连接同一个 PostgreSQL，因此数据完全一致。
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/activity
       SPRING_DATASOURCE_USERNAME: activity
+      DB_READ_ENABLED: ${DB_READ_ENABLED:-false}
+      DB_READ_URL: ${DB_READ_URL:-jdbc:postgresql://postgres-replica:5432/activity?connectTimeout=2&socketTimeout=4}
+      DB_READ_USERNAME: activity_reader
+      DB_READ_PASSWORD: ${DB_READ_PASSWORD:-}
       SPRING_DATASOURCE_PASSWORD: activity
+      # 两个 Tomcat 共享同一个 AI 服务。
       AI_SERVICE_URL: http://ai:8000
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-change-this-local-ai-token}
+      QQ_GATEWAY_URL: http://qq-gateway:3000
+      QQ_GATEWAY_TOKEN: ${QQ_GATEWAY_TOKEN:-change-this-local-token}
       PUBLIC_BASE_URL: http://127.0.0.1:${APP_PORT:-18080}
+      # 两个 Tomcat 挂载同一个上传目录，文件不会因节点切换而丢失。
       STORAGE_LOCAL_PATH: /app/data/uploads
+      # 当前节点标识，会通过 /cluster/node 接口返回。
       APP_INSTANCE_NAME: app-1
+      # JVM 初始堆 256MB，最大堆 512MB。
       CATALINA_OPTS: "-Xms256m -Xmx512m -Dfile.encoding=UTF-8"
+    # 宿主机 18081 -> app1 容器内 Tomcat 8080。
     ports: ["127.0.0.1:${APP1_PORT:-18081}:8080"]
+    # 两个 app 共用同一个宿主机 uploads 目录。
     volumes: ["./data/uploads:/app/data/uploads"]
     depends_on:
       postgres: {condition: service_healthy}
       ai: {condition: service_healthy}
     healthcheck:
+      # 数据库连得上且业务已就绪，Docker 才标记 app1 为 healthy。
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20
 
+  # ------------------------------------------------------------
+  # Tomcat 实例 2：部署同一份 WAR，与 app1 功能完全相同。
+  # ------------------------------------------------------------
   app2:
     build:
       context: .
@@ -70,8 +104,11 @@ services:
       - path: .env
         required: false
     environment:
+      # 继承 app1 的数据库、AI、上传目录等公共配置。
       <<: *app-environment
+      # 只覆盖节点名称，用于证明请求落到了哪个 Tomcat。
       APP_INSTANCE_NAME: app-2
+    # 宿主机 18082 -> app2 容器内 Tomcat 8080。
     ports: ["127.0.0.1:${APP2_PORT:-18082}:8080"]
     volumes: ["./data/uploads:/app/data/uploads"]
     depends_on:
@@ -83,12 +120,18 @@ services:
       timeout: 5s
       retries: 20
 
+  # ------------------------------------------------------------
+  # Nginx：浏览器访问的统一入口，负责轮询和故障转移。
+  # ------------------------------------------------------------
   nginx:
     image: nginx:1.27-alpine
+    # 宿主机 18080 -> 容器内 Nginx 80。
     ports: ["${APP_PORT:-18080}:80"]
     volumes:
+      # 将项目中的 nginx.conf 只读挂载到容器。
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
+      # 两个 Tomcat 都健康后，Nginx 才启动。
       app1: {condition: service_healthy}
       app2: {condition: service_healthy}
     healthcheck:
@@ -97,5 +140,34 @@ services:
       timeout: 5s
       retries: 20
 
+  # ------------------------------------------------------------
+  # 可选 QQ Gateway：仅在使用 qq profile 时启动。
+  # 它通过 Nginx 访问业务集群。
+  # ------------------------------------------------------------
+  qq-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    profiles: ["qq"]
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      QQ_GATEWAY_BACKEND_URL: http://nginx
+      QQ_GATEWAY_TOKEN: ${QQ_GATEWAY_TOKEN:-change-this-local-token}
+      QQ_DELIVERY_PATH: /app/data/deliveries
+    volumes: ["qq_delivery_data:/app/data/deliveries"]
+    depends_on:
+      nginx: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
+  # QQ 消息投递缓存卷。
+  qq_delivery_data:
+  # PostgreSQL 数据持久化卷。
   postgres_data:

@@ -1,5 +1,5 @@
 from ai_service.llm import AiEngine, _normalize_work_draft
-from ai_service.models import FormField, WorkDraft
+from ai_service.models import AssigneeCandidate, FormField, WorkDraft
 from ai_service.rag import Embeddings
 from ai_service.config import settings
 from ai_service.main import app
@@ -8,9 +8,13 @@ from fastapi.testclient import TestClient
 
 def test_offline_plan_only_uses_real_assignees(monkeypatch):
     monkeypatch.setattr("ai_service.llm.settings.llm_api_key", "")
-    plan = AiEngine().plan("组织班级秋游", ["成员甲", "成员乙"])
+    plan = AiEngine().plan("组织班级秋游", [
+        AssigneeCandidate(account_id="a1", display_name="成员甲"),
+        AssigneeCandidate(account_id="a2", display_name="成员乙"),
+    ])
     assert plan.tasks
     assert {task.assignee for task in plan.tasks} == {"成员甲", "成员乙"}
+    assert {task.account_id for task in plan.tasks} == {"a1", "a2"}
     assert {intent.tool for intent in plan.tool_intents} >= {
         "create_form", "assign_tasks", "create_calendar", "schedule_reminder", "publish_message"
     }
@@ -19,8 +23,9 @@ def test_offline_plan_only_uses_real_assignees(monkeypatch):
 def test_offline_plan_does_not_invent_assignees(monkeypatch):
     monkeypatch.setattr("ai_service.llm.settings.llm_api_key", "")
     plan = AiEngine().plan("组织班级秋游", [])
-    assert plan.tasks == []
-    assert "assign_tasks" not in {intent.tool for intent in plan.tool_intents}
+    assert plan.tasks
+    assert all(task.account_id == "" and task.assignee == "待分配" for task in plan.tasks)
+    assert "assign_tasks" in {intent.tool for intent in plan.tool_intents}
 
 
 def test_offline_agent_selects_minimum_assignment_workflow(monkeypatch):

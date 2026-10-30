@@ -140,11 +140,11 @@ docker compose -f compose.cluster.yml exec -T app1 `
 ```
 
 上传文件保存在两个 app 共享的 `data/uploads` 目录。后台任务使用
-`FOR UPDATE SKIP LOCKED` 抢占，多个实例不会重复执行同一任务。
+`FOR UPDATE SKIP LOCKED` 抢占；独立心跳续约、每次领取令牌和版本检查防止过期执行者提交。崩溃后可接管，同一逻辑副作用依靠步骤事务与持久投递结果复用，不能仅靠抢占查询保证绝对只执行一次。
 
 ## 单实例模式
 
-需要 QQ Gateway 时可启动单实例：
+QQ Gateway 在单机和集群均只启动一份。单实例可这样启动：
 
 ```powershell
 start.bat -Single -Port 8080
@@ -152,3 +152,16 @@ start.bat -Single -WithQq
 ```
 
 集群模式使用外部 Tomcat；单实例模式仍使用相同 WAR 镜像，只运行一个 Tomcat。
+
+
+## 集群 QQ 与执行恢复
+
+start.bat -WithQq 或 docker compose -f compose.cluster.yml --profile qq up -d 启动两个 Tomcat 和一个网关。两节点的 QQ_GATEWAY_URL 相同，网关 QQ_GATEWAY_BACKEND_URL 指向 http://nginx，入站可由任一节点处理；health 依赖机器人就绪，不能仅以 HTTP 端口存在判断连接成功。没有 QQ 凭据时不启用 profile，离线业务仍可用。
+
+qq_delivery_data 保存单实例网关的持久去重日志，两个 Tomcat 共用 PostgreSQL 的 outbound_deliveries。保留这些数据才能在重启后核对，不能运行两份网关共享文件目录。/runs/{id} 的 worker_instance、attempts 和租约诊断帮助定位接管节点；不向浏览器提供内部执行令牌。所有生产故障演练应先在独立环境复现。
+
+V6 升级须先停止旧版 Worker，核对并处理旧版在途外发，再整体更新节点；不要混跑缺少租约保护的旧节点。旧版失败/未知投递没有新协议的持久证据，须人工核对，不能将普通重试解释为安全重放。保留原数据库和网关卷，升级/回退前备份另按部署流程完成。
+
+## 数据库主从复制
+
+两个 Tomcat 的负载均衡与数据库读写分离是两层能力。原启动命令仍使用单数据库；设置独立的只读/复制密码后，执行 `start.bat -ReadWriteSplit -Build` 才会叠加 `compose.replication.yml` 并启用从库查询。可通过 `/cluster/database` 计数与 `pg_stat_replication` 同时验证。完整步骤见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。

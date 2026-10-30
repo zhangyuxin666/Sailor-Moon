@@ -26,8 +26,10 @@ public class AiClient {
         this.token = properties.aiInternalToken();
     }
 
-    public JsonNode plan(String rawInput, List<String> availableAssignees) {
-        return post("/internal/ai/plan", Map.of("raw_input", rawInput, "available_assignees", availableAssignees));
+    public JsonNode plan(String rawInput, List<Map<String, Object>> availableAssignees, String organizationId) {
+        return post("/internal/ai/plan", Map.of(
+                "raw_input", rawInput, "available_assignees", availableAssignees,
+                "organization_id", organizationId == null ? "" : organizationId));
     }
 
     public JsonNode analyzeWorkRequest(String rawInput, String classContext, String organizationId) {
@@ -36,13 +38,10 @@ public class AiClient {
                 "organization_id", organizationId == null ? "" : organizationId));
     }
 
-    public String recap(String title, Map<String, Object> stats, String taskSummary, String organizationId) {
-        JsonNode response = post("/internal/ai/recap", Map.of(
-                "activity_title", title, "stats", stats, "task_summary", taskSummary,
-                "organization_id", organizationId == null ? "" : organizationId));
-        return response.path("recap").asText();
+    public JsonNode recapAggregates(Map<String,Object> aggregates){
+        return post("/internal/ai/recap",Map.of("activity_title","活动统计","stats",aggregates,"task_summary","","organization_id",""));
     }
-
+    public JsonNode embeddingResult(String text){return post("/internal/ai/embed",Map.of("text",text));}
     public String reply(String message, String activityContext, String organizationId) {
         JsonNode response = post("/internal/ai/reply", Map.of(
                 "message", message, "activity_context", activityContext,
@@ -63,7 +62,7 @@ public class AiClient {
     }
 
     public List<Double> embedding(String text) {
-        JsonNode response = post("/internal/ai/embed", Map.of("text", text));
+        JsonNode response = embeddingResult(text);
         if (!response.path("embedding").isArray())
             throw new ApiException(HttpStatus.BAD_GATEWAY, "AI 服务未返回有效向量");
         List<Double> values = new ArrayList<>();
@@ -87,7 +86,7 @@ public class AiClient {
                 return response;
             }, this::isTransient, 3, Duration.ofMillis(200));
         } catch (Exception exception) {
-            throw new ApiException(HttpStatus.BAD_GATEWAY, "AI 服务暂时不可用：" + exception.getMessage());
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "AI 服务暂时不可用，请稍后重试");
         }
     }
 

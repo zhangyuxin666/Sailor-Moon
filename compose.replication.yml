@@ -1,0 +1,42 @@
+# Overlay: docker compose -f compose.cluster.yml -f compose.replication.yml up -d --build
+# Also supports compose.yml and compose.prod.yml. Keep postgres_data; replica has its own volume.
+services:
+  postgres:
+    command: ["postgres", "-c", "wal_level=replica", "-c", "max_wal_senders=10", "-c", "max_replication_slots=5", "-c", "max_slot_wal_keep_size=1GB", "-c", "wal_keep_size=256MB", "-c", "hba_file=/replication/pg_hba.conf"]
+    volumes: ["./scripts/postgres:/replication:ro"]
+
+  replica-setup:
+    image: pgvector/pgvector:pg16
+    environment:
+      PGHOST: postgres
+      PGDATABASE: activity
+      PGUSER: activity
+      PGPASSWORD: ${POSTGRES_PASSWORD:-activity}
+      REPLICATION_PASSWORD: ${DB_REPLICATION_PASSWORD:?Set DB_REPLICATION_PASSWORD in .env}
+      READER_PASSWORD: ${DB_READ_PASSWORD:?Set DB_READ_PASSWORD in .env}
+    volumes: ["./scripts/postgres:/replication:ro"]
+    entrypoint: ["bash", "/replication/setup-primary.sh"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+
+  postgres-replica:
+    image: pgvector/pgvector:pg16
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      REPLICATION_PASSWORD: ${DB_REPLICATION_PASSWORD:?Set DB_REPLICATION_PASSWORD in .env}
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./scripts/postgres:/replication:ro
+    entrypoint: ["bash", "/replication/start-replica.sh"]
+    depends_on:
+      replica-setup: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD-SHELL", "psql -U activity -d activity -Atqc 'SELECT pg_is_in_recovery()' | grep -qx t"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  postgres_replica_data:

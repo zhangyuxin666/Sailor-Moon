@@ -30,6 +30,9 @@ import java.util.Set;
 
 @Service
 public class ClassroomService {
+    private DeliveryLogService deliveryLog;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void deliveryLog(DeliveryLogService service){this.deliveryLog=service;}
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of(
             ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".zip", ".png", ".jpg", ".jpeg");
 
@@ -55,12 +58,8 @@ public class ClassroomService {
         requireManager(account);
         String now = LocalDateTime.now().toString();
         String organizationId = ensureOrganization(account);
-        List<Map<String, Object>> bindings = db.list("SELECT group_openid FROM qq_bindings WHERE user_id=? AND status='active' ORDER BY created_at", account.username());
-        if (bindings.isEmpty()) {
-            List<Map<String, Object>> all = db.list("SELECT group_openid FROM qq_bindings WHERE status='active' ORDER BY created_at");
-            if (all.size() == 1) bindings = all;
-        }
-        String group = bindings.isEmpty() ? null : String.valueOf(bindings.get(0).get("group_openid"));
+        // A class is bound explicitly after creation; never inherit a global or arbitrary group.
+        String group = null;
         String id = Ids.shortId();
         db.update("INSERT INTO classes (id, name, manager_id, qq_group_openid, created_at) VALUES (?, ?, ?, ?, ?)",
                 id, name.trim(), account.id(), group, now);
@@ -84,27 +83,91 @@ public class ClassroomService {
         return result;
     }
 
+    public Map<String, Object> classQqBindings(AccountPrincipal account, String classId) {
+        Map<String, Object> classroom = requireClassManager(classId, account);
+        String organizationId = String.valueOf(classroom.get("organization_id"));
+        Object current = classroom.get("qq_group_openid");
+        boolean valid = current != null && qq.isGroupAuthorized(organizationId, String.valueOf(current));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("groups", qq.authorizedGroups(organizationId));
+        result.put("group_openid", valid ? current : null);
+        result.put("qq_group_bound", valid);
+        result.put("binding_needs_update", current != null && !valid);
+        return result;
+    }
+
+    @Transactional
+    public Map<String, Object> bindClassGroup(AccountPrincipal account, String classId, String groupOpenid) {
+        Map<String, Object> classroom = requireClassManager(classId, account);
+        String organizationId = String.valueOf(classroom.get("organization_id"));
+        String group = groupOpenid == null || groupOpenid.isBlank() ? null : groupOpenid.trim();
+        if (group != null && (group.length() > 255 || !qq.isGroupAuthorized(organizationId, group))) {
+            throw ApiException.forbidden("只能选择本组织管理者已授权的 QQ 群");
+        }
+        db.update("UPDATE classes SET qq_group_openid=? WHERE id=?", group, classId);
+        audits.write("class.qq_binding_update", account.id(), organizationId, "class", classId,
+                Map.of("previous_group", classroom.get("qq_group_openid") == null ? "" : classroom.get("qq_group_openid"),
+                        "group_openid", group == null ? "" : group));
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("class_id", classId);
+        result.put("group_openid", group);
+        result.put("qq_group_bound", group != null);
+        return result;
+    }
+
     @Transactional
     public Map<String, Object> importRoster(AccountPrincipal account, String classId, List<ApiModels.RosterMember> members) {
         requireManager(account);
         Map<String, Object> classroom = requireClassManager(classId, account);
+        if (members == null || members.isEmpty()) throw ApiException.badRequest("请提供要导入的成员");
+        if (members.size() > 500) throw ApiException.badRequest("单次最多导入 500 名成员");
+        Set<String> usernames = new HashSet<>();
+        for (ApiModels.RosterMember item : members) {
+            if (item == null || item.username() == null || item.username().isBlank()) {
+                throw ApiException.badRequest("成员登录名不能为空");
+            }
+            if (!usernames.add(item.username().trim())) throw ApiException.badRequest("导入成员的登录名重复");
+        }
+
+        // Validate the whole batch before creating accounts or membership rows.
+        // Lock existing accounts in a stable order so reset/import cannot race on their ownership.
+        String organizationId = String.valueOf(classroom.get("organization_id"));
+        Map<String, Map<String, Object>> existingMembers = new HashMap<>();
+        for (ApiModels.RosterMember item : members.stream()
+                .sorted(java.util.Comparator.comparing(member -> member.username().trim())).toList()) {
+            String username = item.username().trim();
+            Map<String, Object> member = db.one("SELECT * FROM accounts WHERE username=? FOR UPDATE", username).orElse(null);
+            if (member == null) continue;
+            if (!"participant".equals(member.get("role")) || !"active".equals(member.get("status"))) {
+                throw ApiException.forbidden("不能复用该已有账号，请使用本组织有效成员或新的登录名");
+            }
+            List<Map<String, Object>> organizations = db.list(
+                    "SELECT organization_id FROM organization_members WHERE account_id=?", member.get("id"));
+            if (organizations.size() != 1 || !organizationId.equals(organizations.get(0).get("organization_id"))) {
+                throw ApiException.forbidden("不能导入其他组织或尚未授权加入本组织的已有账号");
+            }
+            existingMembers.put(username, member);
+        }
+
         List<Map<String, Object>> created = new ArrayList<>();
         String now = LocalDateTime.now().toString();
         for (ApiModels.RosterMember item : members) {
-            Map<String, Object> member = db.one("SELECT * FROM accounts WHERE username=?", item.username().trim()).orElse(null);
+            String username = item.username().trim();
+            Map<String, Object> member = existingMembers.get(username);
             String memberId;
             if (member != null) {
-                if (!"participant".equals(member.get("role"))) throw ApiException.badRequest("登录名 " + item.username() + " 已被管理者占用");
                 memberId = String.valueOf(member.get("id"));
             } else {
-                memberId = auth.createAccount(item.username(), item.displayName(), item.password(), "participant", item.studentNo());
+                memberId = auth.createAccount(username, item.displayName(), item.password(), "participant", item.studentNo());
                 db.update("INSERT INTO account_security (account_id, force_password_change, failed_logins, password_changed_at) VALUES (?, 1, 0, ?)", memberId, now);
+                db.update("INSERT INTO organization_members (organization_id, account_id, role, created_at) VALUES (?, ?, 'participant', ?)",
+                        organizationId, memberId, now);
             }
-            db.update("INSERT INTO organization_members (organization_id, account_id, role, created_at) VALUES (?, ?, 'participant', ?) ON CONFLICT DO NOTHING",
-                    classroom.get("organization_id"), memberId, now);
             db.update("INSERT INTO class_members (class_id, account_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING", classId, memberId, now);
-            created.add(Map.of("id", memberId, "username", item.username(), "display_name", item.displayName(),
-                    "student_no", item.studentNo() == null ? "" : item.studentNo()));
+            Object displayName = member == null ? item.displayName() : member.get("display_name");
+            Object studentNo = member == null ? item.studentNo() : member.get("student_no");
+            created.add(Map.of("id", memberId, "username", username, "display_name", displayName,
+                    "student_no", studentNo == null ? "" : studentNo));
         }
         audits.write("roster.import", account.id(), String.valueOf(classroom.get("organization_id")), "class", classId, Map.of("count", created.size()));
         return Map.of("count", created.size(), "members", created);
@@ -150,6 +213,7 @@ public class ClassroomService {
         requireManager(account);
         String deadline = normalizeTime(body.deadline(), "截止时间格式无效");
         Map<String, Object> classroom = requireClassManager(classId, account);
+        String classGroup = validatedClassGroup(classroom);
         String id = Ids.shortId();
         String now = LocalDateTime.now().toString();
         String kind = body.kind() == null || body.kind().isBlank() ? "homework" : body.kind();
@@ -160,9 +224,9 @@ public class ClassroomService {
                 id, member.get("account_id"), now));
         audits.write("todo.create", account.id(), String.valueOf(classroom.get("organization_id")), "todo", id,
                 Map.of("title", body.title(), "assigned_count", members.size()));
-        if (classroom.get("qq_group_openid") != null) {
+        if (classGroup != null) {
             String label = "homework".equals(kind) ? "作业" : "待办";
-            sendAndRecord(id, String.valueOf(classroom.get("qq_group_openid")),
+            sendAndRecord(id, classGroup,
                     "【新" + label + "】" + body.title() + "\n截止时间：" + deadline + "\n" +
                             (body.description() == null ? "" : body.description()) + "\n请登录活动管家平台完成提交。", "publish");
         }
@@ -190,8 +254,10 @@ public class ClassroomService {
         }
         List<Map<String, Object>> todos = db.list("SELECT t.*, c.name AS class_name, ta.status AS my_status, ta.note, ta.original_filename, ta.submitted_at " +
                 "FROM todo_assignees ta JOIN todos t ON t.id=ta.todo_id JOIN classes c ON c.id=t.class_id WHERE ta.account_id=? ORDER BY t.deadline", account.id());
-        List<Map<String, Object>> activityTasks = mutable(db.list("SELECT t.id, t.title, t.status AS my_status, a.title AS activity_title, a.plan_json, a.created_at " +
-                "FROM activity_task_assignees ata JOIN tasks t ON t.id=ata.task_id JOIN activities a ON a.id=t.activity_id WHERE ata.account_id=? ORDER BY a.created_at DESC", account.id()));
+        List<Map<String, Object>> activityTasks = mutable(db.list("SELECT t.id, t.title, t.status, t.status AS my_status, t.activity_id, ata.account_id, assigned.display_name AS assignee, " +
+                "t.description, t.deadline, t.priority, t.version, a.title AS activity_title, a.status AS activity_status, a.plan_json, a.created_at " +
+                "FROM activity_task_assignees ata JOIN tasks t ON t.id=ata.task_id JOIN accounts assigned ON assigned.id=ata.account_id " +
+                "JOIN activities a ON a.id=t.activity_id WHERE ata.account_id=? ORDER BY a.created_at DESC", account.id()));
         for (Map<String, Object> item : activityTasks) {
             String eventTime = item.get("created_at").toString();
             try {
@@ -230,6 +296,8 @@ public class ClassroomService {
             safeName = Path.of(filename).getFileName().toString();
             String extension = safeName.contains(".") ? safeName.substring(safeName.lastIndexOf('.')).toLowerCase() : "";
             if (!ALLOWED_EXTENSIONS.contains(extension)) throw ApiException.badRequest("不支持该文件类型");
+            // Serialize quota checks across both workers for the same account.
+            db.required("SELECT id FROM accounts WHERE id=? FOR UPDATE", account.id());
             long used = count("SELECT COALESCE(SUM(size_bytes),0) AS count FROM file_assets WHERE account_id=?", account.id());
             if (used + content.length > properties.userStorageQuotaMb() * 1024L * 1024L)
                 throw ApiException.badRequest("个人存储空间不能超过 " + properties.userStorageQuotaMb() + "MB");
@@ -265,17 +333,20 @@ public class ClassroomService {
         return Map.of("id", id, "todo_id", todoId, "remind_at", time, "status", "scheduled");
     }
 
-    public Map<String, Object> remindMissing(AccountPrincipal account, String todoId, boolean scheduled) {
-        Map<String, Object> todo = db.one("SELECT t.*, c.qq_group_openid FROM todos t JOIN classes c ON c.id=t.class_id WHERE t.id=?", todoId)
+    public Map<String,Object> remindMissing(AccountPrincipal account,String todoId,boolean scheduled){return remindMissing(account,todoId,scheduled,null);}
+    public Map<String, Object> remindMissing(AccountPrincipal account, String todoId, boolean scheduled,String stableKey) {
+        Map<String, Object> todo = db.one("SELECT t.*, c.qq_group_openid, co.organization_id FROM todos t JOIN classes c ON c.id=t.class_id " +
+                "JOIN class_organizations co ON co.class_id=c.id WHERE t.id=?", todoId)
                 .orElseThrow(() -> ApiException.notFound("待办不存在"));
         if (!scheduled) requireClassManager(String.valueOf(todo.get("class_id")), account);
         List<String> names = db.list("SELECT a.display_name FROM todo_assignees ta JOIN accounts a ON a.id=ta.account_id WHERE ta.todo_id=? AND ta.status!='done' ORDER BY a.student_no, a.display_name", todoId)
                 .stream().map(row -> String.valueOf(row.get("display_name"))).toList();
         if (names.isEmpty()) return Map.of("status", "skipped", "message", "所有人都已完成", "missing", names);
-        if (todo.get("qq_group_openid") == null) throw ApiException.notFound("班级尚未绑定 QQ 群");
-        Map<String, Object> delivery = sendAndRecord(todoId, String.valueOf(todo.get("qq_group_openid")),
+        String classGroup = validatedClassGroup(todo);
+        if (classGroup == null) throw ApiException.notFound("班级尚未绑定 QQ 群");
+        Map<String, Object> delivery = sendAndRecord(todoId, classGroup,
                 "【未完成提醒】" + todo.get("title") + "\n截止时间：" + todo.get("deadline") + "\n以下同学尚未完成：" + String.join("、", names) + "\n请尽快登录活动管家平台提交。",
-                scheduled ? "scheduled" : "manual");
+                scheduled ? "scheduled" : "manual",stableKey);
         if ("failed".equals(delivery.get("status")))
             throw new ApiException(HttpStatus.BAD_GATEWAY, "QQ 消息发送失败：" + delivery.get("error"));
         return Map.of("status", "sent", "missing", names, "delivery", delivery);
@@ -286,21 +357,35 @@ public class ClassroomService {
         return db.list("SELECT a.id, a.username, a.display_name, a.student_no, a.status, a.created_at FROM class_members cm JOIN accounts a ON a.id=cm.account_id WHERE cm.class_id=? ORDER BY a.student_no, a.display_name", classId);
     }
 
-    public Map<String, Object> sendAndRecord(String todoId, String groupOpenid, String content, String kind) {
-        String id = Ids.shortId();
-        String now = LocalDateTime.now().toString();
-        try {
-            Map<String, Object> result = qq.sendGroup(groupOpenid, content,
-                    "todo:" + todoId + ":" + kind + ":" + Integer.toHexString(content.hashCode()));
-            db.update("INSERT INTO classroom_deliveries (id, todo_id, kind, content, status, external_id, created_at) VALUES (?, ?, ?, ?, 'sent', ?, ?)",
-                    id, todoId, kind, content, result.get("id"), now);
-            return result;
-        } catch (RuntimeException exception) {
-            String message = exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage();
-            db.update("INSERT INTO classroom_deliveries (id, todo_id, kind, content, status, error, created_at) VALUES (?, ?, ?, ?, 'failed', ?, ?)",
-                    id, todoId, kind, content, message, now);
-            return Map.of("status", "failed", "error", message);
+    public Map<String,Object> sendAndRecord(String todoId,String groupOpenid,String content,String kind){return sendAndRecord(todoId,groupOpenid,content,kind,null);}
+    public Map<String, Object> sendAndRecord(String todoId, String groupOpenid, String content, String kind,String stableKey) {
+        String key=stableKey==null?"todo:"+todoId+":"+kind+":"+ActivityGate.hash(content):stableKey;
+        var previous=db.one("SELECT group_openid,content FROM outbound_deliveries WHERE logical_key=?",key).orElse(null);
+        if(previous!=null) {
+            if(!groupOpenid.equals(previous.get("group_openid")))throw ApiException.badRequest("提醒渠道已变化，请重新确认通知");
+            content=String.valueOf(previous.get("content"));
         }
+        if(deliveryLog!=null)deliveryLog.todo(todoId,key,kind,content,"sending",null,null);
+        try {
+            var result=qq.sendGroup(groupOpenid,content,key);
+            if(deliveryLog!=null)deliveryLog.todo(todoId,key,kind,content,"sent",(String)result.get("id"),null);
+            return result;
+        }catch(RuntimeException error) {
+            String state=error instanceof ApiException e&&e.status().value()==409?"unknown":"failed";
+            if(deliveryLog!=null)deliveryLog.todo(todoId,key,kind,content,state,null,com.activityassistant.support.PublicErrors.failure(error));
+            if("unknown".equals(state))throw error;
+            return Map.of("status","failed","error",com.activityassistant.support.PublicErrors.failure(error));
+        }
+    }
+
+    private String validatedClassGroup(Map<String, Object> classroom) {
+        Object group = classroom.get("qq_group_openid");
+        if (group == null) return null;
+        Object organizationId = classroom.get("organization_id");
+        if (organizationId == null || !qq.isGroupAuthorized(String.valueOf(organizationId), String.valueOf(group))) {
+            throw ApiException.badRequest("班级 QQ 群绑定已失效，请重新选择本组织授权的群");
+        }
+        return String.valueOf(group);
     }
 
     private String ensureOrganization(AccountPrincipal account) {

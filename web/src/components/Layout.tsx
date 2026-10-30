@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { passwordChangeRequired } from '../lib/auth-policy';
 
 const navItems = [
   { to: '/portal', label: '总览', icon: '◈', managerOnly: false },
@@ -16,6 +17,9 @@ const navItems = [
   { to: '/file-center', label: '文件中心', icon: '⤒', managerOnly: false },
   { to: '/activity', label: '活动管理', icon: '▣', managerOnly: true },
   { to: '/members', label: '成员管理', icon: '◉', managerOnly: true },
+  { to: '/knowledge', label: '知识库', icon: '▤', managerOnly: true },
+  { to: '/participation', label: '签到与反馈', icon: '✓', managerOnly: false },
+  { to: '/templates', label: '业务模板', icon: '▦', managerOnly: true },
   { to: '/settings', label: '设置', icon: '⚙', managerOnly: false },
 ];
 
@@ -23,10 +27,12 @@ export default function Layout() {
   const { account, logout } = useAuth();
   const navigate = useNavigate();
   const isManager = account?.role === 'manager';
+  const mustChangePassword = passwordChangeRequired(account);
   const [clusterNode, setClusterNode] = useState<{ instance: string; port: number } | null>(null);
 
   useEffect(() => {
     let active = true;
+    if (mustChangePassword) return;
     api<{ instance: string; port: number }>('/cluster/node')
       .then((node) => {
         if (active) setClusterNode(node);
@@ -37,7 +43,7 @@ export default function Layout() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [mustChangePassword]);
 
   const handleLogout = async () => {
     await logout();
@@ -58,7 +64,7 @@ export default function Layout() {
 
         <nav className="ws-nav">
           {navItems
-            .filter((item) => !item.managerOnly || isManager)
+            .filter((item) => mustChangePassword ? item.to === '/settings' : !item.managerOnly || isManager)
             .map((item) => (
               <NavLink
                 key={item.to}
@@ -86,10 +92,10 @@ export default function Layout() {
             退出
           </button>
         </div>
-        <div className="ws-cluster-node" title="当前处理本次请求的 Tomcat 节点">
+        {!mustChangePassword && <div className="ws-cluster-node" title="当前处理本次请求的 Tomcat 节点">
           当前节点
           <strong>{clusterNode ? `${clusterNode.instance} : ${clusterNode.port}` : '未连接'}</strong>
-        </div>
+        </div>}
       </aside>
 
       {/* 主内容区 */}

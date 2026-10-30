@@ -7,17 +7,23 @@
  * 登录成功后跳 /portal。
  */
 import { useState, useEffect, type FormEvent } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import type { AuthStatus } from '../types';
+import type { Account, AuthStatus } from '../types';
+import DataState from '../components/DataState';
+import { passwordChangeRequired } from '../lib/auth-policy';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const passwordChanged = (location.state as { passwordChanged?: boolean } | null)?.passwordChanged === true;
   const { refresh } = useAuth();
   const [initialized, setInitialized] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [statusError, setStatusError] = useState('');
+  const [statusAttempt, setStatusAttempt] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   // 表单字段
@@ -29,17 +35,22 @@ export default function Login() {
 
   // 挂载时检查认证状态和系统初始化状态
   useEffect(() => {
+    setLoading(true);
+    setStatusError('');
+    let active = true;
     api<AuthStatus>('/auth/status')
       .then((status) => {
+        if (!active) return;
         if (status.account) {
-          navigate('/portal', { replace: true });
+          navigate(passwordChangeRequired(status.account) ? '/settings' : '/portal', { replace: true });
           return;
         }
         setInitialized(status.initialized);
       })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [navigate]);
+      .catch((e) => { if (active) setStatusError(e.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [navigate, statusAttempt]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -54,13 +65,13 @@ export default function Login() {
         body.accept_privacy = acceptPrivacy;
       }
 
-      await api(initialized ? '/auth/login' : '/auth/bootstrap', {
+      const signedIn = await api<Account>(initialized ? '/auth/login' : '/auth/bootstrap', {
         method: 'POST',
         body: JSON.stringify(body),
       });
 
       await refresh();
-      navigate('/portal', { replace: true });
+      navigate(passwordChangeRequired(signedIn) ? '/settings' : '/portal', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '登录失败');
     } finally {
@@ -71,6 +82,8 @@ export default function Login() {
   if (loading) {
     return <div className="page-loading">加载中…</div>;
   }
+
+  if (statusError) return <DataState error={statusError} onRetry={() => setStatusAttempt((value) => value + 1)} />;
 
   return (
     <div className="auth-page">
@@ -108,6 +121,8 @@ export default function Login() {
                 ? '管理者和参与者使用各自账号登录。'
                 : '首次使用，请先建立班级管理者账号。'}
             </p>
+
+            {passwordChanged && <p className="reason-box" role="status">密码已更新，所有旧会话已退出。请使用新密码重新登录。</p>}
 
             {/* 初始化模式：姓名 */}
             {!initialized && (
