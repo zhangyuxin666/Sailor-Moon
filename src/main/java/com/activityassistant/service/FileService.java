@@ -9,6 +9,9 @@ import com.activityassistant.support.Ids;
 import com.activityassistant.support.MissingChunksException;
 import com.activityassistant.support.Sha256;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -20,7 +23,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 文件中心：分片上传、断点续传、分片校验、批量上传与下载。
@@ -36,7 +38,6 @@ public class FileService {
     private final Db db;
     private final StorageService storage;
     private final AppProperties properties;
-    private final Map<String, Object> locks = new ConcurrentHashMap<>();
 
     public FileService(Db db, StorageService storage, AppProperties properties) {
         this.db = db;
@@ -109,9 +110,10 @@ public class FileService {
         return result;
     }
 
+    @Transactional
     public Map<String, Object> putChunk(AccountPrincipal account, String uploadId, int index,
                                         byte[] content, String declaredSha) {
-        Map<String, Object> session = session(account, uploadId);
+        Map<String, Object> session = lockedSession(account, uploadId);
         if (!"uploading".equals(String.valueOf(session.get("status")))) {
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT, "该上传任务已结束，无法继续上传分片");
         }
@@ -127,7 +129,9 @@ public class FileService {
         }
 
         String actual = Sha256.of(content);
-        if (declaredSha != null && !declaredSha.isBlank() && !Sha256.matches(declaredSha.strip(), actual)) {
+        String expected = normalizeSha(declaredSha);
+        if (expected == null) throw ApiException.badRequest("必须提供有效的 X-Chunk-Sha256");
+        if (!Sha256.matches(expected, actual)) {
             // 分片损坏：不落盘，直接告诉客户端重传这一片
             throw new ChunkChecksumException(index, declaredSha.strip(), actual);
         }
@@ -146,71 +150,88 @@ public class FileService {
         return result;
     }
 
+    @Transactional
     public Map<String, Object> complete(AccountPrincipal account, String uploadId) {
-        Object lock = locks.computeIfAbsent(uploadId, key -> new Object());
-        synchronized (lock) {
-            try {
-                Map<String, Object> session = session(account, uploadId);
-                int totalChunks = ((Number) session.get("total_chunks")).intValue();
-
-                List<Integer> uploaded = uploadedIndexes(uploadId);
-                List<Integer> missing = new ArrayList<>();
-                for (int index = 0; index < totalChunks; index++) {
-                    if (!uploaded.contains(index)) missing.add(index);
-                }
-                if (!missing.isEmpty()) throw new MissingChunksException(missing);
-
-                int updated = db.update("UPDATE upload_sessions SET status='merging', updated_at=? " +
-                        "WHERE id=? AND status='uploading'", Instant.now().toString(), uploadId);
-                if (updated != 1) throw new ApiException(org.springframework.http.HttpStatus.CONFLICT, "该上传任务已处理");
-
-                String filename = String.valueOf(session.get("original_filename"));
-                String key = storageKey(account.id(), filename);
-                String digest;
-                try {
-                    digest = storage.mergeChunks(uploadId, totalChunks, key);
-                } catch (RuntimeException exception) {
-                    db.update("UPDATE upload_sessions SET status='uploading', updated_at=? WHERE id=?",
-                            Instant.now().toString(), uploadId);
-                    throw exception;
-                }
-
-                String expected = (String) session.get("file_sha256");
-                if (expected != null && !Sha256.matches(expected, digest)) {
-                    storage.delete(key);
-                    db.update("UPDATE upload_sessions SET status='failed', updated_at=? WHERE id=?",
-                            Instant.now().toString(), uploadId);
-                    throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
-                            "整文件 SHA-256 校验失败（期望 " + expected.substring(0, 12) + "…，实际 "
-                                    + digest.substring(0, 12) + "…），请重新上传");
-                }
-
-                String fileId = Ids.shortId();
-                long size = ((Number) session.get("size_bytes")).longValue();
-                db.update("INSERT INTO file_assets(id, todo_id, account_id, storage_key, original_filename, " +
-                                "content_type, size_bytes, created_at, sha256, upload_id, upload_mode) " +
-                                "VALUES(?,NULL,?,?,?,?,?,?,?,?, 'chunked')",
-                        fileId, account.id(), key, filename, session.get("content_type"), size,
-                        Instant.now().toString(), digest, uploadId);
-                db.update("UPDATE upload_sessions SET status='done', updated_at=? WHERE id=?",
-                        Instant.now().toString(), uploadId);
-                storage.deleteUpload(uploadId);
-                locks.remove(uploadId);
-
-                Map<String, Object> result = new LinkedHashMap<>();
-                result.put("file_id", fileId);
-                result.put("filename", filename);
-                result.put("size", size);
-                result.put("sha256", digest);
-                return result;
-            } finally {
-                locks.remove(uploadId);
-            }
+        Map<String, Object> session = lockedSession(account, uploadId);
+        if ("done".equals(session.get("status"))) {
+            Map<String, Object> asset = db.one("SELECT id, original_filename, size_bytes, sha256 FROM file_assets WHERE upload_id=? AND account_id=?",
+                    uploadId, account.id()).orElseThrow(() -> ApiException.notFound("上传结果不存在"));
+            return Map.of("file_id", asset.get("id"), "filename", asset.get("original_filename"),
+                    "size", asset.get("size_bytes"), "sha256", asset.get("sha256"));
         }
+        if (!"uploading".equals(session.get("status"))) {
+            throw new ApiException(org.springframework.http.HttpStatus.CONFLICT, "该上传任务已结束");
+        }
+        int totalChunks = ((Number) session.get("total_chunks")).intValue();
+
+        List<Integer> uploaded = uploadedIndexes(uploadId);
+        List<Integer> missing = new ArrayList<>();
+        for (int index = 0; index < totalChunks; index++) {
+            if (!uploaded.contains(index)) missing.add(index);
+        }
+        if (!missing.isEmpty()) throw new MissingChunksException(missing);
+
+        int updated = db.update("UPDATE upload_sessions SET status='merging', updated_at=? " +
+                "WHERE id=? AND status='uploading'", Instant.now().toString(), uploadId);
+        if (updated != 1) throw new ApiException(org.springframework.http.HttpStatus.CONFLICT, "该上传任务已处理");
+
+        String filename = String.valueOf(session.get("original_filename"));
+        String key = storageKey(account.id(), filename);
+        String digest;
+        try {
+            Map<Integer, String> checksums = new HashMap<>();
+            for (Map<String, Object> row : db.list("SELECT chunk_index, sha256 FROM upload_chunks WHERE session_id=?", uploadId)) {
+                checksums.put(((Number) row.get("chunk_index")).intValue(), String.valueOf(row.get("sha256")));
+            }
+            digest = storage.mergeChunks(uploadId, totalChunks, key, checksums);
+        } catch (RuntimeException exception) {
+            db.update("UPDATE upload_sessions SET status='uploading', updated_at=? WHERE id=?",
+                    Instant.now().toString(), uploadId);
+            throw exception;
+        }
+
+        String expected = (String) session.get("file_sha256");
+        if (expected != null && !Sha256.matches(expected, digest)) {
+            storage.delete(key);
+            db.update("UPDATE upload_sessions SET status='failed', updated_at=? WHERE id=?",
+                    Instant.now().toString(), uploadId);
+            throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                    "整文件 SHA-256 校验失败（期望 " + expected.substring(0, 12) + "…，实际 "
+                            + digest.substring(0, 12) + "…），请重新上传");
+        }
+
+        String fileId = Ids.shortId();
+        long size = ((Number) session.get("size_bytes")).longValue();
+        db.update("INSERT INTO file_assets(id, todo_id, account_id, storage_key, original_filename, " +
+                        "content_type, size_bytes, created_at, sha256, upload_id, upload_mode) " +
+                        "VALUES(?,NULL,?,?,?,?,?,?,?,?, 'chunked')",
+                fileId, account.id(), key, filename, session.get("content_type"), size,
+                Instant.now().toString(), digest, uploadId);
+        db.update("UPDATE upload_sessions SET status='done', updated_at=? WHERE id=?",
+                Instant.now().toString(), uploadId);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { storage.deleteUpload(uploadId); }
+                @Override public void afterCompletion(int status) {
+                    if (status != STATUS_COMMITTED) storage.delete(key);
+                }
+            });
+        } else {
+            storage.deleteUpload(uploadId);
+        }
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("file_id", fileId);
+        result.put("filename", filename);
+        result.put("size", size);
+        result.put("sha256", digest);
+        return result;
     }
 
+    @Transactional
     public void abort(AccountPrincipal account, String uploadId) {
-        session(account, uploadId);
+        Map<String, Object> session = lockedSession(account, uploadId);
+        if ("done".equals(session.get("status"))) throw ApiException.badRequest("已完成的文件请从文件列表删除");
         db.update("UPDATE upload_sessions SET status='aborted', updated_at=? WHERE id=?",
                 Instant.now().toString(), uploadId);
         storage.deleteUpload(uploadId);
@@ -219,6 +240,7 @@ public class FileService {
     // ------------------------------------------------------------ 批量 / 列表
 
     public List<Map<String, Object>> batch(AccountPrincipal account, List<MultipartFile> files) {
+        if (files.isEmpty() || files.size() > 24) throw ApiException.badRequest("批量上传每次限1到24个文件");
         List<Map<String, Object>> results = new ArrayList<>();
         long limit = (long) properties.uploadMaxMb() * 1024 * 1024;
         for (MultipartFile file : files) {
@@ -297,6 +319,13 @@ public class FileService {
         return session;
     }
 
+    private Map<String, Object> lockedSession(AccountPrincipal account, String uploadId) {
+        Map<String, Object> session = db.one("SELECT * FROM upload_sessions WHERE id=? FOR UPDATE", uploadId)
+                .orElseThrow(() -> ApiException.notFound("上传任务不存在"));
+        if (!account.id().equals(String.valueOf(session.get("account_id")))) throw ApiException.forbidden("无权访问该上传任务");
+        return session;
+    }
+
     private List<Integer> uploadedIndexes(String uploadId) {
         return db.list("SELECT chunk_index FROM upload_chunks WHERE session_id=? ORDER BY chunk_index", uploadId)
                 .stream().map(row -> ((Number) row.get("chunk_index")).intValue()).toList();
@@ -333,9 +362,11 @@ public class FileService {
         return contentType.strip();
     }
 
-    private String normalizeSha(String sha256) {        if (sha256 == null) return null;
+    private String normalizeSha(String sha256) {
+        if (sha256 == null) return null;
         String value = sha256.strip().toLowerCase();
-        return value.matches("[0-9a-f]{64}") ? value : null;
+        if (!value.matches("[0-9a-f]{64}")) throw ApiException.badRequest("SHA-256 格式不正确");
+        return value;
     }
 
     /** 供下载接口做 ETag。 */

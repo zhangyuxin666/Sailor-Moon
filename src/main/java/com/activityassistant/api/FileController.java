@@ -3,6 +3,8 @@ package com.activityassistant.api;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.service.FileService;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -25,12 +27,14 @@ import java.io.IOException;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Semaphore;
 
 /**
  * 文件中心：分片上传 / 断点续传 / 批量上传 / Range 下载 / 并发下载。
@@ -39,9 +43,12 @@ import java.util.Map;
 @RequestMapping("/files")
 public class FileController {
     private final FileService files;
+    private final Semaphore downloads;
 
-    public FileController(FileService files) {
+    public FileController(FileService files, @Value("${app.download-max-concurrent:128}") int concurrentDownloads) {
         this.files = files;
+        if (concurrentDownloads < 1) throw new IllegalArgumentException("download-max-concurrent must be positive");
+        this.downloads = new Semaphore(concurrentDownloads);
     }
 
     public record UploadInitRequest(String filename, String contentType, long size, String sha256, Integer chunkSize) {
@@ -60,13 +67,18 @@ public class FileController {
         return files.status(AuthController.required(authentication), uploadId);
     }
 
-    /** 上传单个分片，X-Chunk-Sha256 用于校验；不匹配返回 400 让客户端重传。 */
+    /** 分片请求最多8MiB，先限流读取再校验，避免恶意请求整包驻留内存。 */
     @PutMapping(value = "/uploads/{uploadId}/chunks/{index}", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     Map<String, Object> putChunk(Authentication authentication, @PathVariable String uploadId,
                                  @PathVariable int index,
-                                 @RequestHeader(value = "X-Chunk-Sha256", required = false) String sha256,
-                                 @RequestBody byte[] content) {
-        return files.putChunk(AuthController.required(authentication), uploadId, index, content, sha256);
+                                 @RequestHeader(value = "X-Chunk-Sha256") String sha256,
+                                 HttpServletRequest request) throws IOException {
+        AccountPrincipal account = AuthController.required(authentication);
+        int limit = 8 * 1024 * 1024;
+        if (request.getContentLengthLong() > limit) throw new com.activityassistant.support.ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "分片不能超过8MiB");
+        byte[] content = request.getInputStream().readNBytes(limit + 1);
+        if (content.length > limit) throw new com.activityassistant.support.ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "分片不能超过8MiB");
+        return files.putChunk(account, uploadId, index, content, sha256);
     }
 
     /** 合并分片并校验整文件哈希。 */
@@ -114,20 +126,36 @@ public class FileController {
     @GetMapping("/{fileId}/download")
     void download(Authentication authentication, @PathVariable String fileId,
                   @RequestHeader(value = HttpHeaders.RANGE, required = false) String range,
+                  @RequestHeader(value = HttpHeaders.IF_RANGE, required = false) String ifRange,
+                  @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch,
+                  HttpServletRequest request,
                   HttpServletResponse response) throws IOException {
         AccountPrincipal account = AuthController.required(authentication);
         Map<String, String> meta = files.downloadHeaders(account, fileId);
         Path path = files.path(account, fileId);
         long length = Files.size(path);
 
-        MediaType type = MediaType.parseMediaType(meta.get("content_type"));
+        MediaType type;
+        try { type = MediaType.parseMediaType(meta.get("content_type")); }
+        catch (IllegalArgumentException ignored) { type = MediaType.APPLICATION_OCTET_STREAM; }
         ContentDisposition disposition = ContentDisposition.attachment()
                 .filename(meta.get("filename"), StandardCharsets.UTF_8).build();
-        String etag = meta.get("sha256").isBlank() ? null : "\"" + meta.get("sha256") + "\"";
+        String etag = meta.get("sha256").isBlank()
+                ? "W/\"" + length + "-" + Files.getLastModifiedTime(path).toMillis() + "\""
+                : "\"" + meta.get("sha256") + "\"";
+        response.setHeader(HttpHeaders.ETAG, etag);
+        response.setHeader(HttpHeaders.ACCEPT_RANGES, "bytes");
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "private, no-cache, no-transform");
+        if (ifNoneMatch != null && (ifNoneMatch.equals("*") || java.util.Arrays.stream(ifNoneMatch.split(","))
+                .map(String::strip).anyMatch(value -> value.replaceFirst("^W/", "").equals(etag.replaceFirst("^W/", ""))))) {
+            response.setStatus(HttpStatus.NOT_MODIFIED.value());
+            return;
+        }
 
         long start = 0;
         long end = length - 1;
         boolean partial = range != null && !range.isBlank();
+        if (ifRange != null && (!ifRange.equals(etag) || etag.startsWith("W/"))) partial = false;
         if (partial) {
             long[] bounds = parseRange(range, length);
             if (bounds == null) {
@@ -147,7 +175,13 @@ public class FileController {
         response.setHeader(HttpHeaders.ACCEPT_RANGES, "bytes");
         if (partial) response.setHeader(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + length);
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION, disposition.toString());
-        if (etag != null) response.setHeader(HttpHeaders.ETAG, etag);
+        if ("HEAD".equals(request.getMethod()) || count == 0) return;
+        if (!downloads.tryAcquire()) {
+            response.setContentLengthLong(0);
+            response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+            response.setHeader(HttpHeaders.RETRY_AFTER, "1");
+            return;
+        }
 
         try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ);
              WritableByteChannel output = Channels.newChannel(response.getOutputStream())) {
@@ -155,11 +189,17 @@ public class FileController {
             long remaining = count;
             while (remaining > 0) {
                 long transferred = channel.transferTo(position, remaining, output);
-                if (transferred <= 0) break;
+                if (transferred <= 0) {
+                    ByteBuffer buffer = ByteBuffer.allocate((int) Math.min(64 * 1024, remaining));
+                    int read = channel.read(buffer, position);
+                    if (read < 1) throw new IOException("下载流意外结束");
+                    response.getOutputStream().write(buffer.array(), 0, read);
+                    transferred = read;
+                }
                 position += transferred;
                 remaining -= transferred;
             }
-        }
+        } finally { downloads.release(); }
     }
 
     /**
@@ -167,6 +207,7 @@ public class FileController {
      * 支持 "bytes=start-end"、"bytes=start-" 和 "bytes=-suffix"。
      */
     static long[] parseRange(String header, long length) {
+        if (length <= 0) return null;
         String value = header.strip();
         if (!value.startsWith("bytes=")) return null;
         value = value.substring("bytes=".length()).strip();

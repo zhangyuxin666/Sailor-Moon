@@ -21,6 +21,7 @@ RUN --mount=type=cache,target=/root/.m2 \
 FROM tomcat:10.1-jdk21-temurin@sha256:07191205c229da87cb8cbb086c12f513601846147fcccf2d79aff945f627e9a9
 WORKDIR /app
 RUN rm -rf "${CATALINA_HOME}/webapps/"* \
-    && mkdir -p /app/data/uploads
+    && mkdir -p /app/data/uploads \
+    && sed -i 's/port="8080"/port="8080" useVirtualThreads="true" maxConnections="4096" acceptCount="256"/' "${CATALINA_HOME}/conf/server.xml"
 COPY --from=build /workspace/target/activity-assistant-*.war "${CATALINA_HOME}/webapps/ROOT.war"
 EXPOSE 8080

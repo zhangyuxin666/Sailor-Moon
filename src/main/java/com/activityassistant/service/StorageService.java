@@ -3,6 +3,7 @@ package com.activityassistant.service;
 import com.activityassistant.config.AppProperties;
 import com.activityassistant.support.ApiException;
 import com.activityassistant.support.Sha256;
+import com.activityassistant.support.MissingChunksException;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -109,7 +111,7 @@ public class StorageService {
         Path target = chunkPath(uploadId, index);
         try {
             Files.createDirectories(target.getParent());
-            Path temp = target.resolveSibling(index + ".part.tmp");
+            Path temp = Files.createTempFile(target.getParent(), index + "-", ".tmp");
             Files.write(temp, data);
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException exception) {
@@ -143,10 +145,22 @@ public class StorageService {
 
     /** 顺序合并分片，返回合并后文件的 SHA-256。 */
     public String mergeChunks(String uploadId, int totalChunks, String targetKey) {
+        return mergeChunks(uploadId, totalChunks, targetKey, Map.of());
+    }
+
+    /** 合并前重新核验落盘分片，返回确切缺失/损坏编号，由客户端只重传这些片。 */
+    public String mergeChunks(String uploadId, int totalChunks, String targetKey, Map<Integer, String> checksums) {
         Path target = safe(targetKey);
+        Path temp = target.resolveSibling(target.getFileName() + ".merging");
         try {
+            List<Integer> invalid = new ArrayList<>();
+            for (int index = 0; index < totalChunks; index++) {
+                Path chunk = chunkPath(uploadId, index);
+                if (!Files.isRegularFile(chunk) || (!checksums.isEmpty() &&
+                        !Sha256.matches(checksums.getOrDefault(index, ""), Sha256.of(chunk)))) invalid.add(index);
+            }
+            if (!invalid.isEmpty()) throw new MissingChunksException(invalid);
             Files.createDirectories(target.getParent());
-            Path temp = target.resolveSibling(target.getFileName() + ".merging");
             try (FileChannel out = FileChannel.open(temp, StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
                 for (int index = 0; index < totalChunks; index++) {
@@ -169,6 +183,8 @@ public class StorageService {
             return digest;
         } catch (IOException exception) {
             throw new IllegalStateException("分片合并失败", exception);
+        } finally {
+            try { Files.deleteIfExists(temp); } catch (IOException ignored) { }
         }
     }
 

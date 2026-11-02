@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { sessionRequired } from './session-policy';
 
 export interface ApiError extends Error {
+  data?: unknown;
   status?: number;
   code?: string;
 }
@@ -52,6 +53,7 @@ export async function api<T = unknown>(
     const error = new Error(message) as ApiError;
     error.status = response.status;
     error.code = (data as { code?: string })?.code;
+    error.data = data;
     if (error.code === 'password_change_required') {
       window.dispatchEvent(new Event('activity:password-change-required'));
     }

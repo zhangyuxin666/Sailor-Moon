@@ -1,728 +1,313 @@
-/**
- * 文件中心 /files
- * 演示：大文件分片上传（校验 / 重传 / 断点续传）、小文件批量上传、
- * 带进度条与断点续传的下载、多线程并发下载。
- */
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { api } from '../lib/api';
+import { api, type ApiError } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { useToast } from '../components/Toast';
+import { hashFile } from '../lib/file-hash';
+import { pool, progress, ranges, validateRange } from '../lib/file-transfer';
+import { blocks, clearTransfer, getTransfer, saveBlock, saveTransfer, type TransferRecord } from '../lib/transfer-store';
 
-const CHUNK_CONCURRENCY = 3;
-const PARALLEL_PARTS = 4;
-
-type ChunkState = 'pending' | 'uploading' | 'done' | 'failed';
-
-interface UploadInit {
-  upload_id: string | null;
-  chunk_size?: number;
-  total_chunks?: number;
-  uploaded?: number[];
-  instant?: boolean;
-  file_id?: string;
+const BLOCK = 2 * 1024 * 1024;
+type State = 'pending' | 'uploading' | 'done' | 'failed';
+interface Asset { id: string; original_filename: string; size_bytes: number; sha256?: string; created_at: string }
+interface Upload extends TransferRecord {
+  file: File; states: State[]; active: Record<number, number>; confirmed: number;
+  running: boolean; paused: boolean; corrupt: boolean; error?: string; complete: boolean;
 }
-
-interface UploadStatus {
-  upload_id: string;
-  chunk_size: number;
-  total_chunks: number;
-  uploaded: number[];
-  status: string;
+interface Download extends TransferRecord {
+  fileId: string; active: Record<number, number>; confirmed: number;
+  running: boolean; paused: boolean; connections: number; error?: string; complete: boolean;
 }
-
-interface FileItem {
-  id: string;
-  original_filename: string;
-  size_bytes: number;
-  content_type?: string;
-  sha256?: string;
-  created_at: string;
-}
-
-interface UploadJob {
-  file: File;
-  uploadId: string;
-  chunkSize: number;
-  totalChunks: number;
-  states: ChunkState[];
-  uploadedBytes: number;
-  paused: boolean;
-  running: boolean;
-  corruptOnce: boolean;
-  notice: string;
-  error: string | null;
-  fileId: string | null;
-}
-
-interface DownloadJob {
-  id: string;
-  filename: string;
-  total: number;
-  received: number;
-  paused: boolean;
-  running: boolean;
-  error: string | null;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
-async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-async function putChunk(uploadId: string, index: number, body: ArrayBuffer, sha: string): Promise<void> {
-  const response = await fetch(`/files/uploads/${uploadId}/chunks/${index}`, {
-    method: 'PUT',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/octet-stream', 'X-Chunk-Sha256': sha },
-    body,
-  });
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => ({}))) as { detail?: string; code?: string };
-    const error = new Error(payload.detail || `分片上传失败（${response.status}）`);
-    (error as Error & { code?: string }).code = payload.code;
-    throw error;
-  }
-}
-
-function saveBlob(blob: Blob, filename: string): void {
+type TransferError = ApiError & { data?: { missing?: number[]; detail?: string } };
+function message(error: unknown) { return error instanceof Error ? error.message : '传输失败'; }
+function size(bytes: number) { return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(2)} MiB` : `${(bytes / 1024).toFixed(1)} KiB`; }
+function save(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
-
-const cardStyle: CSSProperties = {
-  border: '1px solid #e5e5e2',
-  borderRadius: 12,
-  padding: 18,
-  marginBottom: 18,
-  background: '#fff',
-};
-
-const barStyle: CSSProperties = {
-  height: 8,
-  background: '#f0f0ed',
-  borderRadius: 999,
-  overflow: 'hidden',
-  marginTop: 8,
-};
+function wireError(status: number, text: string): TransferError {
+  let data: { detail?: string; code?: string } = {};
+  try { data = JSON.parse(text); } catch { /* A proxy may return HTML. */ }
+  return Object.assign(new Error(data.detail ?? `请求失败（${status}）`), { status, code: data.code, data });
+}
+async function xhr(url: string, method: string, body: XMLHttpRequestBodyInit, signal: AbortSignal,
+  onProgress: (bytes: number, total: number) => void, headers: Record<string, string> = {}): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open(method, url); request.withCredentials = true; request.timeout = 120000;
+    Object.entries(headers).forEach(([key, value]) => request.setRequestHeader(key, value));
+    const abort = () => request.abort();
+    const finish = () => signal.removeEventListener('abort', abort);
+    request.upload.onprogress = event => onProgress(event.loaded, event.lengthComputable ? event.total : 0);
+    request.onload = () => {
+      finish();
+      if (request.status < 200 || request.status >= 300) { reject(wireError(request.status, request.responseText)); return; }
+      try { resolve(JSON.parse(request.responseText)); } catch { reject(new Error('服务器响应不是有效JSON')); }
+    };
+    request.onerror = () => { finish(); reject(new Error('网络中断')); };
+    request.ontimeout = () => { finish(); reject(new Error('传输超时')); };
+    request.onabort = () => { finish(); reject(new DOMException('已暂停', 'AbortError')); };
+    signal.addEventListener('abort', abort, { once: true });
+    if (signal.aborted) reject(new DOMException('已暂停', 'AbortError')); else request.send(body);
+  });
+}
+const card: CSSProperties = { border: '1px solid #e5e5e2', borderRadius: 12, padding: 18, marginBottom: 18, background: '#fff' };
+function Bar({ value, label }: { value: number; label: string }) {
+  return <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span>{label}</span><span>{value.toFixed(1)}%</span></div>
+    <progress aria-label={label} value={value} max={100} style={{ width: '100%', height: 14, accentColor: '#228764' }} /></div>;
+}
 
 export default function Files() {
+  const { account } = useAuth();
   const { showToast } = useToast();
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const jobRef = useRef<UploadJob | null>(null);
-  const [, setJobVersion] = useState(0);
-  const job = jobRef.current;
-  const renderJob = useCallback(() => setJobVersion((value) => value + 1), []);
-
-  const [batchProgress, setBatchProgress] = useState(0);
+  const owner = account?.id ?? 'anonymous';
+  const uploadKey = `${owner}:upload`;
+  const upload = useRef<Upload | null>(null);
+  const download = useRef<Download | null>(null);
+  const uploadControllers = useRef(new Set<AbortController>());
+  const downloadControllers = useRef(new Set<AbortController>());
+  const mounted = useRef(true);
+  const [, version] = useState(0);
+  const refresh = useCallback(() => { if (mounted.current) version(x => x + 1); }, []);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [hint, setHint] = useState<TransferRecord>();
+  const [hashing, setHashing] = useState<number | null>(null);
+  const [corrupt, setCorrupt] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
+  const [batchPercent, setBatchPercent] = useState(0);
   const [batchResults, setBatchResults] = useState<Array<{ filename: string; ok: boolean; error?: string }>>([]);
-
-  const downloadRef = useRef<DownloadJob | null>(null);
-  const [, setDownloadVersion] = useState(0);
-  const download = downloadRef.current;
-  const renderDownload = useCallback(() => setDownloadVersion((value) => value + 1), []);
-  const [parallelInfo, setParallelInfo] = useState('');
-
-  const loadFiles = useCallback(async () => {
-    try {
-      const data = await api<{ files: FileItem[] }>('/files/mine');
-      setFiles(data.files ?? []);
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : '加载文件失败', 'error');
-    } finally {
-      setLoading(false);
-    }
+  const [logs, setLogs] = useState<string[]>([]);
+  const log = (value: string) => { if (mounted.current) setLogs(xs => [`${new Date().toLocaleTimeString()} ${value}`, ...xs].slice(0, 24)); };
+  const load = useCallback(async () => {
+    try { setAssets((await api<{ files: Asset[] }>('/files/mine')).files); }
+    catch (error) { showToast(message(error), 'error'); }
   }, [showToast]);
-
   useEffect(() => {
-    void loadFiles();
-  }, [loadFiles]);
+    mounted.current = true;
+    void load();
+    void getTransfer(uploadKey).then(setHint).catch(error => showToast(`无法恢复缓存：${message(error)}`, 'error'));
+    return () => {
+      mounted.current = false;
+      if (upload.current) upload.current.paused = true;
+      if (download.current) download.current.paused = true;
+      uploadControllers.current.forEach(c => c.abort()); downloadControllers.current.forEach(c => c.abort());
+    };
+  }, [load, uploadKey, showToast]);
 
-  // ----------------------------------------------------------- 大文件分片
-
-  const uploadChunk = useCallback(async (current: UploadJob, index: number) => {
-    const start = index * current.chunkSize;
-    const end = Math.min(current.file.size, start + current.chunkSize);
-    const buffer = await current.file.slice(start, end).arrayBuffer();
-    const digest = await sha256Hex(buffer);
-
-    if (current.corruptOnce) {
-      // 演示“分片损坏”：内容被篡改，与声明的 SHA-256 不一致，服务端拒绝并要求重传
-      current.corruptOnce = false;
-      const view = new Uint8Array(buffer);
-      view[0] = view[0] ^ 0xff;
-    }
-
+  async function runUpload(job: Upload) {
+    if (job.running || job.complete) return;
+    job.running = true; job.paused = false; job.error = undefined; refresh();
     try {
-      await putChunk(current.uploadId, index, buffer, digest);
-    } catch (error) {
-      const code = (error as Error & { code?: string }).code;
-      if (code === 'CHUNK_CHECKSUM_MISMATCH') {
-        const retry = await current.file.slice(start, end).arrayBuffer();
-        const retryDigest = await sha256Hex(retry);
-        await putChunk(current.uploadId, index, retry, retryDigest);
-        current.notice = `第 ${index + 1} 个分片校验失败，已自动重传成功`;
+      for (let repair = 0; repair < 3 && !job.paused; repair++) {
+        const pending = job.states.flatMap((state, index) => state === 'done' ? [] : [index]);
+        await pool(pending.length, 3, async position => {
+          if (job.paused) return;
+          const index = pending[position];
+          const start = index * job.chunkSize!;
+          const end = Math.min(job.size, start + job.chunkSize!);
+          job.states[index] = 'uploading';
+          for (let attempt = 0; attempt < 3; attempt++) {
+            if (job.paused) return;
+            const controller = new AbortController(); uploadControllers.current.add(controller);
+            try {
+              const body = await job.file.slice(start, end).arrayBuffer();
+              const sha = await hashFile(new Blob([body]));
+              if (job.corrupt) { job.corrupt = false; new Uint8Array(body)[0] ^= 255; }
+              await xhr(`/files/uploads/${job.uploadId}/chunks/${index}`, 'PUT', body, controller.signal,
+                bytes => { job.active[index] = Math.min(bytes, end - start); refresh(); },
+                { 'Content-Type': 'application/octet-stream', 'X-Chunk-Sha256': sha });
+              job.confirmed += end - start; delete job.active[index]; job.states[index] = 'done'; refresh(); return;
+            } catch (error) {
+              delete job.active[index];
+              if (job.paused || (error as Error).name === 'AbortError') { job.states[index] = 'pending'; return; }
+              const failure = error as TransferError;
+              log(`分片 ${index} 失败：${failure.code ?? message(error)}；${attempt < 2 ? '重传该片' : '达到重试上限'}`);
+              if (attempt === 2 || (failure.status && failure.status < 500 && failure.status !== 429 && failure.code !== 'CHUNK_CHECKSUM_MISMATCH')) {
+                job.states[index] = 'failed'; throw error;
+              }
+              await new Promise(resolve => setTimeout(resolve, 300 * 2 ** attempt));
+            } finally { uploadControllers.current.delete(controller); }
+          }
+        });
+        if (job.paused) break;
+        try {
+          const result = await api<{ file_id: string }>(`/files/uploads/${job.uploadId}/complete`, { method: 'POST' });
+          job.fileId = result.file_id; job.complete = true;
+          await clearTransfer(job.key); setHint(undefined); log('全部分片及整文件SHA-256验证通过，合并完成'); await load(); break;
+        } catch (error) {
+          const missing = (error as TransferError).data?.missing;
+          if (!missing?.length || repair === 2) throw error;
+          missing.forEach(index => { if (index >= 0 && index < job.states.length) job.states[index] = 'pending'; });
+          job.confirmed = job.states.reduce((total, state, i) => total + (state === 'done' ? Math.min(job.chunkSize!, job.size - i * job.chunkSize!) : 0), 0);
+          log(`合并前发现磁盘分片损坏/缺失：${missing.join(', ')}，只重传这些片`);
+        }
+      }
+    } catch (error) { job.paused = true; job.error = message(error); log(job.error); }
+    finally { job.running = false; refresh(); }
+  }
+
+  async function selectFile(file: File) {
+    if (upload.current?.running || hashing !== null) return;
+    if (!file.size || file.size > 2 * 1024 ** 3) { showToast('请选择大于0且不超过2GiB的文件', 'error'); return; }
+    setHashing(0);
+    try {
+      const sha = await hashFile(file, setHashing);
+      let meta = await getTransfer(uploadKey);
+      let uploaded: number[] = [];
+      if (meta) {
+        if (meta.sha256 !== sha || meta.size !== file.size) throw new Error('文件内容不同，请选择原文件，或先取消旧的续传任务');
+        const status = await api<{ uploaded: number[] }>(`/files/uploads/${meta.uploadId}`);
+        uploaded = status.uploaded; log(`恢复服务端已确认的${uploaded.length}个分片，跳过它们`);
       } else {
-        throw error;
+        const response = await api<{ upload_id: string; chunk_size: number; total_chunks: number; instant?: boolean; file_id?: string }>('/files/uploads',
+          { method: 'POST', body: JSON.stringify({ filename: file.name, content_type: file.type, size: file.size, sha256: sha }) });
+        if (response.instant) { log('整文件哈希命中，秒传完成'); await load(); return; }
+        meta = { key: uploadKey, kind: 'upload', filename: file.name, size: file.size, sha256: sha, uploadId: response.upload_id, chunkSize: response.chunk_size };
+        await saveTransfer(meta); setHint(meta);
       }
-    }
-    current.states[index] = 'done';
-    current.uploadedBytes += end - start;
-  }, []);
-
-  const finishUpload = useCallback(
-    async (current: UploadJob) => {
-      try {
-        const result = await api<{ file_id: string }>(`/files/uploads/${current.uploadId}/complete`, {
-          method: 'POST',
-        });
-        current.fileId = result.file_id;
-        current.notice = `合并完成，文件 ID：${result.file_id}`;
-        showToast('分片上传完成');
-        await loadFiles();
-      } catch (error) {
-        current.error = error instanceof Error ? error.message : '合并失败';
-        showToast(current.error, 'error');
-      } finally {
-        renderJob();
-      }
-    },
-    [loadFiles, renderJob, showToast],
-  );
-
-  const runUpload = useCallback(
-    async (current: UploadJob) => {
-      if (current.running || current.fileId) return;
-      current.running = true;
-      current.error = null;
-      renderJob();
-      const inFlight = new Set<Promise<void>>();
-      try {
-        while (!current.paused) {
-          while (inFlight.size < CHUNK_CONCURRENCY) {
-            const index = current.states.findIndex((state) => state === 'pending' || state === 'failed');
-            if (index < 0) break;
-            current.states[index] = 'uploading';
-            const task: Promise<void> = uploadChunk(current, index)
-              .catch((error: unknown) => {
-                current.states[index] = 'failed';
-                current.error = error instanceof Error ? error.message : '分片上传失败';
-              })
-              .finally(() => {
-                inFlight.delete(task);
-                renderJob();
-              });
-            inFlight.add(task);
-          }
-          if (inFlight.size === 0) break;
-          await Promise.race(inFlight);
-        }
-        await Promise.all([...inFlight]);
-      } finally {
-        current.running = false;
-        renderJob();
-      }
-      if (!current.paused && current.states.every((state) => state === 'done') && !current.fileId) {
-        await finishUpload(current);
-      }
-    },
-    [finishUpload, renderJob, uploadChunk],
-  );
-
-  const startUpload = useCallback(
-    async (file: File) => {
-      try {
-        const init = await api<UploadInit>('/files/uploads', {
-          method: 'POST',
-          body: JSON.stringify({
-            filename: file.name,
-            content_type: file.type || 'application/octet-stream',
-            size: file.size,
-          }),
-        });
-        if (init.instant && init.file_id) {
-          showToast('秒传成功：服务端已有相同文件');
-          await loadFiles();
-          return;
-        }
-        const totalChunks = init.total_chunks ?? Math.ceil(file.size / (init.chunk_size ?? 1));
-        const next: UploadJob = {
-          file,
-          uploadId: init.upload_id as string,
-          chunkSize: init.chunk_size as number,
-          totalChunks,
-          states: Array.from({ length: totalChunks }, () => 'pending' as ChunkState),
-          uploadedBytes: 0,
-          paused: false,
-          running: false,
-          corruptOnce: false,
-          notice: '',
-          error: null,
-          fileId: null,
-        };
-        jobRef.current = next;
-        renderJob();
-        void runUpload(next);
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : '初始化上传失败', 'error');
-      }
-    },
-    [loadFiles, renderJob, runUpload, showToast],
-  );
-
-  const togglePause = useCallback(async () => {
-    const current = jobRef.current;
-    if (!current) return;
-    if (!current.paused) {
-      current.paused = true;
-      current.notice = '已暂停，可以刷新页面后再点“继续上传”验证断点续传';
-      renderJob();
-      return;
-    }
+      const states = ranges(file.size, meta.chunkSize!).map((_, index) => uploaded.includes(index) ? 'done' as const : 'pending' as const);
+      const job: Upload = { ...meta, file, states, active: {}, confirmed: states.reduce((n, state, i) => n + (state === 'done' ? Math.min(meta!.chunkSize!, file.size - i * meta!.chunkSize!) : 0), 0), running: false, paused: false, corrupt, complete: false };
+      upload.current = job; refresh(); void runUpload(job);
+    } catch (error) { showToast(message(error), 'error'); }
+    finally { setHashing(null); }
+  }
+  async function resumeUpload() {
+    const job = upload.current; if (!job || job.running) return;
     try {
-      const status = await api<UploadStatus>(`/files/uploads/${current.uploadId}`);
-      const uploaded = new Set(status.uploaded);
-      current.states = current.states.map((state, index) =>
-        uploaded.has(index) ? 'done' : state === 'uploading' ? 'pending' : state,
-      );
-      current.uploadedBytes = Array.from(uploaded).reduce((sum, index) => {
-        const start = index * current.chunkSize;
-        return sum + Math.min(current.chunkSize, current.file.size - start);
-      }, 0);
-      current.paused = false;
-      current.notice = `服务端已有 ${uploaded.size}/${current.totalChunks} 个分片，继续上传剩余部分`;
-      renderJob();
-      for (let wait = 0; wait < 40 && current.running; wait++) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      void runUpload(current);
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : '查询续传状态失败', 'error');
-    }
-  }, [renderJob, runUpload, showToast]);
-
-  const cancelUpload = useCallback(async () => {
-    const current = jobRef.current;
-    if (!current) return;
-    current.paused = true;
+      const status = await api<{ uploaded: number[] }>(`/files/uploads/${job.uploadId}`);
+      job.states = job.states.map((_, index) => status.uploaded.includes(index) ? 'done' : 'pending');
+      job.confirmed = job.states.reduce((n, state, i) => n + (state === 'done' ? Math.min(job.chunkSize!, job.size - i * job.chunkSize!) : 0), 0);
+      job.active = {}; await runUpload(job);
+    } catch (error) { job.error = message(error); refresh(); }
+  }
+  async function cancelUpload() {
+    if (upload.current?.running) return;
+    const meta = upload.current ?? hint;
+    if (!meta) return;
     try {
-      await api(`/files/uploads/${current.uploadId}`, { method: 'DELETE' });
-    } catch {
-      // 已完成或已取消时忽略
-    }
-    jobRef.current = null;
-    renderJob();
-    showToast('已取消上传');
-  }, [renderJob, showToast]);
+      await api(`/files/uploads/${meta.uploadId}`, { method: 'DELETE' });
+    } catch (error) { if ((error as ApiError).status !== 404) { showToast(message(error), 'error'); return; } }
+    await clearTransfer(meta.key); upload.current = null; setHint(undefined); refresh();
+  }
 
-  // ----------------------------------------------------------- 批量上传
+  async function uploadBatch(list: FileList) {
+    if (batchBusy) return;
+    const files = Array.from(list);
+    if (files.length > 24 || files.some(file => file.size > 5 * 1024 ** 2)) { showToast('批量上传最多24个文件，每个不超过5MiB；更大文件请使用分片上传', 'error'); return; }
+    setBatchBusy(true); setBatchPercent(0); setBatchResults([]);
+    const form = new FormData(); files.forEach(file => form.append('files', file));
+    const controller = new AbortController(); uploadControllers.current.add(controller);
+    try {
+      const result = await xhr('/files/batch', 'POST', form, controller.signal,
+        (bytes, total) => setBatchPercent(total ? Math.min(99, bytes * 100 / total) : 0)) as { results: typeof batchResults };
+      setBatchResults(result.results); setBatchPercent(100); log(`批量处理完成：${result.results.filter(x => x.ok).length}/${files.length}成功`); await load();
+    } catch (error) { showToast(message(error), 'error'); }
+    finally { setBatchBusy(false); uploadControllers.current.delete(controller); }
+  }
 
-  const uploadBatch = useCallback(
-    async (list: FileList) => {
-      const form = new FormData();
-      Array.from(list).forEach((file) => form.append('files', file));
-      setBatchBusy(true);
-      setBatchProgress(0);
-      setBatchResults([]);
-      await new Promise<void>((resolve) => {
-        const request = new XMLHttpRequest();
-        request.open('POST', '/files/batch');
-        request.withCredentials = true;
-        request.upload.onprogress = (event) => {
-          if (event.lengthComputable) setBatchProgress(Math.round((event.loaded / event.total) * 100));
-        };
-        request.onload = () => {
+  async function runDownload(job: Download) {
+    if (job.running) return;
+    job.running = true; job.paused = false; job.complete = false; job.error = undefined; refresh();
+    try {
+      const head = await fetch(`/files/${job.fileId}/download`, { method: 'HEAD', credentials: 'include' });
+      if (!head.ok) throw new Error(`文件信息读取失败（${head.status}）`);
+      const etag = head.headers.get('etag') ?? '';
+      const total = Number(head.headers.get('content-length'));
+      if (total !== job.size || (job.etag && job.etag !== etag)) {
+        await clearTransfer(job.key); job.confirmed = 0; job.size = total; log('文件版本变化，已清除旧缓存并从头下载');
+      }
+      job.etag = etag;
+      const cached = await blocks(job.key);
+      const done = new Set(cached.map(part => part.index));
+      job.confirmed = cached.reduce((n, part) => n + part.blob.size, 0);
+      await saveTransfer({ key: job.key, kind: 'download', filename: job.filename, size: job.size, sha256: job.sha256, fileId: job.fileId, etag, received: job.confirmed });
+      const slices = ranges(job.size, BLOCK);
+      const pending = slices.flatMap((_, i) => done.has(i) ? [] : [i]);
+      log(`下载使用${job.connections}个连接，已有${done.size}个分块缓存，剩余${pending.length}个`);
+      await pool(pending.length, job.connections, async position => {
+        if (job.paused) return;
+        const index = pending[position]; const part = slices[index];
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (job.paused) return;
+          const controller = new AbortController(); downloadControllers.current.add(controller);
           try {
-            const payload = JSON.parse(request.responseText) as {
-              results?: Array<{ filename: string; ok: boolean; error?: string }>;
-            };
-            setBatchResults(payload.results ?? []);
-            showToast(`批量上传完成：${payload.results?.length ?? 0} 个文件`);
-          } catch {
-            showToast('批量上传返回异常', 'error');
-          }
-          resolve();
-        };
-        request.onerror = () => {
-          showToast('批量上传失败', 'error');
-          resolve();
-        };
-        request.send(form);
+            const response = await fetch(`/files/${job.fileId}/download`, { credentials: 'include', signal: controller.signal,
+              headers: { Range: `bytes=${part.start}-${part.end}`, 'If-Range': etag } });
+            if ([429, 502, 503, 504].includes(response.status)) throw new Error(`服务繁忙（${response.status}），稍后重试`);
+            validateRange(response.status, response.headers.get('content-range'), part.start, part.end, job.size);
+            if (response.headers.get('etag') !== etag) throw new Error('文件版本已变化，请重新开始下载');
+            if (!response.body) throw new Error('浏览器不支持流式下载');
+            const reader = response.body.getReader(); const pieces: Uint8Array<ArrayBuffer>[] = [];
+            let received = 0;
+            for (;;) {
+              const { done: ended, value } = await reader.read(); if (ended) break;
+              pieces.push(new Uint8Array(value)); received += value.byteLength; job.active[index] = received; refresh();
+            }
+            if (received !== part.end - part.start + 1) throw new Error('下载分块长度不完整');
+            await saveBlock(job, index, new Blob(pieces));
+            job.confirmed += received; delete job.active[index]; refresh(); return;
+          } catch (error) {
+            delete job.active[index];
+            if (job.paused || (error as Error).name === 'AbortError') return;
+            if (attempt === 2) throw error;
+            await new Promise(resolve => setTimeout(resolve, 500 * 2 ** attempt));
+          } finally { downloadControllers.current.delete(controller); }
+        }
       });
-      setBatchBusy(false);
-      setBatchProgress(100);
-      await loadFiles();
-    },
-    [loadFiles, showToast],
-  );
-
-  // ----------------------------------------------------------- 下载
-
-  const runDownload = useCallback(
-    async (current: DownloadJob) => {
-      if (current.running) return;
-      if (current.total > 0 && current.received >= current.total) return;
-      current.running = true;
-      current.paused = false;
-      current.error = null;
-      renderDownload();
-
-      const chunks: ArrayBuffer[] = [];
-      const offset = current.received;
-      try {
-        const response = await fetch(`/files/${current.id}/download`, {
-          credentials: 'include',
-          headers: offset > 0 ? { Range: `bytes=${offset}-` } : {},
-        });
-        if (!response.ok) throw new Error(`下载失败（${response.status}）`);
-        const range = response.headers.get('content-range');
-        if (range) {
-          const match = /\/(\d+)$/.exec(range);
-          if (match) current.total = Number(match[1]);
-        } else if (!current.total) {
-          current.total = Number(response.headers.get('content-length') || 0);
-        }
-        if (!response.body) throw new Error('当前浏览器不支持流式下载');
-
-        const reader = response.body.getReader();
-        for (;;) {
-          if (current.paused) {
-            await reader.cancel();
-            break;
-          }
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (value) {
-            chunks.push(new Uint8Array(value).buffer as ArrayBuffer);
-            current.received += value.length;
-            renderDownload();
-          }
-        }
-        if (!current.paused) {
-          saveBlob(new Blob(chunks), current.filename);
-          current.received = current.total;
-          showToast('下载完成');
-        }
-      } catch (error) {
-        if ((error as Error).name !== 'AbortError') {
-          current.error = error instanceof Error ? error.message : '下载失败';
-          showToast(current.error, 'error');
-        }
-      } finally {
-        current.running = false;
-        renderDownload();
+      if (!job.paused) {
+        const parts = await blocks(job.key);
+        if (parts.length !== slices.length || parts.some((part, i) => part.index !== i || part.blob.size !== slices[i].end - slices[i].start + 1)) throw new Error('本地下载缓存不完整');
+        const blob = new Blob(parts.map(part => part.blob));
+        if (job.sha256 && await hashFile(blob) !== job.sha256) { await clearTransfer(job.key); job.confirmed = 0; throw new Error('整文件SHA-256不一致，已清除错误缓存，请重新下载'); }
+        save(blob, job.filename); job.complete = true; log(`下载完成并校验通过：${job.filename}`);
       }
-    },
-    [renderDownload, showToast],
-  );
-
-  const startDownload = useCallback(
-    (file: FileItem) => {
-      const next: DownloadJob = {
-        id: file.id,
-        filename: file.original_filename,
-        total: file.size_bytes,
-        received: 0,
-        paused: false,
-        running: false,
-        error: null,
-      };
-      downloadRef.current = next;
-      renderDownload();
-      void runDownload(next);
-    },
-    [renderDownload, runDownload],
-  );
-
-  const pauseDownload = useCallback(() => {
-    const current = downloadRef.current;
-    if (!current) return;
-    current.paused = true;
-    renderDownload();
-  }, [renderDownload]);
-
-  const resumeDownload = useCallback(() => {
-    const current = downloadRef.current;
-    if (!current) return;
-    current.paused = false;
-    void (async () => {
-      for (let wait = 0; wait < 40 && current.running; wait++) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      await runDownload(current);
-    })();
-  }, [runDownload]);
-
-  const parallelDownload = useCallback(
-    async (file: FileItem) => {
-      setParallelInfo('正在以 4 个并发连接下载…');
-      try {
-        const head = await fetch(`/files/${file.id}/download`, { method: 'HEAD', credentials: 'include' });
-        const size = Number(head.headers.get('content-length') || file.size_bytes);
-        const partSize = Math.ceil(size / PARALLEL_PARTS);
-        const started = performance.now();
-        const parts = await Promise.all(
-          Array.from({ length: PARALLEL_PARTS }, async (_, index) => {
-            const start = index * partSize;
-            const end = Math.min(size - 1, start + partSize - 1);
-            const response = await fetch(`/files/${file.id}/download`, {
-              credentials: 'include',
-              headers: { Range: `bytes=${start}-${end}` },
-            });
-            if (response.status !== 206) throw new Error('服务端未返回 206，Range 未生效');
-            return response.arrayBuffer();
-          }),
-        );
-        const elapsed = (performance.now() - started) / 1000;
-        saveBlob(new Blob(parts), file.original_filename);
-        const speed = elapsed > 0 ? size / 1024 / 1024 / elapsed : 0;
-        setParallelInfo(
-          `4 线程并发下载完成：${formatSize(size)}，用时 ${elapsed.toFixed(2)}s，约 ${speed.toFixed(1)} MB/s`,
-        );
-      } catch (error) {
-        setParallelInfo('');
-        showToast(error instanceof Error ? error.message : '并发下载失败', 'error');
-      }
-    },
-    [showToast],
-  );
-
-  const removeFile = useCallback(
-    async (file: FileItem) => {
-      if (!window.confirm(`确定删除 ${file.original_filename}？`)) return;
-      try {
-        await api(`/files/${file.id}`, { method: 'DELETE' });
-        await loadFiles();
-        showToast('已删除');
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : '删除失败', 'error');
-      }
-    },
-    [loadFiles, showToast],
-  );
-
-  const doneChunks = job ? job.states.filter((state) => state === 'done').length : 0;
-  const chunkPercent = job && job.totalChunks > 0 ? Math.round((doneChunks / job.totalChunks) * 100) : 0;
-  const downloadPercent =
-    download && download.total > 0 ? Math.min(100, Math.round((download.received / download.total) * 100)) : 0;
-
-  return (
-    <>
-      <header className="ws-header">
-        <div>
-          <p className="ws-kicker">FILES</p>
-          <h1>文件中心</h1>
-          <p>大文件分片上传、断点续传、批量上传与多线程下载的完整演示。</p>
-        </div>
-      </header>
-
-      <section style={cardStyle}>
-        <h2 style={{ margin: 0, fontSize: 16 }}>1. 大文件分片上传</h2>
-        <p style={{ color: '#666', fontSize: 13, margin: '6px 0 12px' }}>
-          默认 2 MB 分片、并发 3 片；每片带 SHA-256 校验，损坏自动重传；暂停后可继续，服务端按已收分片续传。
-        </p>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <label className="ws-button light" style={{ cursor: 'pointer' }}>
-            选择大文件
-            <input
-              type="file"
-              style={{ display: 'none' }}
-              onChange={(event) => {
-                const picked = event.target.files?.[0];
-                if (picked) void startUpload(picked);
-                event.target.value = '';
-              }}
-            />
-          </label>
-          {job && !job.fileId && (
-            <>
-              <button className="ws-button" onClick={() => void togglePause()}>
-                {job.paused ? '继续上传（断点续传）' : '暂停'}
-              </button>
-              <button className="ws-button light" onClick={() => void cancelUpload()}>
-                取消
-              </button>
-              <button
-                className="ws-button danger"
-                onClick={() => {
-                  if (jobRef.current) {
-                    jobRef.current.corruptOnce = true;
-                    jobRef.current.notice = '下一个分片会被故意改坏，用来演示服务端拒绝并触发重传';
-                    renderJob();
-                  }
-                }}
-              >
-                模拟分片损坏
-              </button>
-            </>
-          )}
-        </div>
-
-        {job && (
-          <div style={{ marginTop: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-              <span>
-                {job.file.name} · {formatSize(job.file.size)} · {job.totalChunks} 片
-              </span>
-              <span>{chunkPercent}%</span>
-            </div>
-            <div style={barStyle}>
-              <div style={{ width: `${chunkPercent}%`, height: '100%', background: '#171717', transition: 'width .2s' }} />
-            </div>
-            <div style={{ marginTop: 8, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-              {job.states.map((state, index) => (
-                <span
-                  key={index}
-                  title={`分片 ${index + 1}: ${state}`}
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: 2,
-                    background:
-                      state === 'done'
-                        ? '#228764'
-                        : state === 'uploading'
-                          ? '#2463eb'
-                          : state === 'failed'
-                            ? '#ba3f4c'
-                            : '#e5e5e2',
-                  }}
-                />
-              ))}
-            </div>
-            {job.notice && <p style={{ fontSize: 12, color: '#228764', margin: '8px 0 0' }}>{job.notice}</p>}
-            {job.error && <p style={{ fontSize: 12, color: '#ba3f4c', margin: '8px 0 0' }}>{job.error}</p>}
-            {job.fileId && <p style={{ fontSize: 12, color: '#666', margin: '8px 0 0' }}>文件 ID：{job.fileId}</p>}
-          </div>
-        )}
-      </section>
-
-      <section style={cardStyle}>
-        <h2 style={{ margin: 0, fontSize: 16 }}>2. 小文件批量上传</h2>
-        <p style={{ color: '#666', fontSize: 13, margin: '6px 0 12px' }}>
-          一次选择多个小文件，通过一个 multipart 请求上传，服务端逐个处理并返回每个文件的结果。
-        </p>
-        <label className="ws-button light" style={{ cursor: 'pointer' }}>
-          选择多个文件
-          <input
-            type="file"
-            multiple
-            style={{ display: 'none' }}
-            onChange={(event) => {
-              if (event.target.files?.length) void uploadBatch(event.target.files);
-              event.target.value = '';
-            }}
-          />
-        </label>
-        {batchBusy && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 13 }}>上传中 {batchProgress}%</div>
-            <div style={barStyle}>
-              <div style={{ width: `${batchProgress}%`, height: '100%', background: '#2463eb', transition: 'width .2s' }} />
-            </div>
-          </div>
-        )}
-        {batchResults.length > 0 && (
-          <ul style={{ margin: '12px 0 0', paddingLeft: 18, fontSize: 13 }}>
-            {batchResults.map((item, index) => (
-              <li key={index} style={{ color: item.ok ? '#228764' : '#ba3f4c' }}>
-                {item.filename}：{item.ok ? '成功' : item.error}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section style={cardStyle}>
-        <h2 style={{ margin: 0, fontSize: 16 }}>3. 文件列表与下载</h2>
-        <p style={{ color: '#666', fontSize: 13, margin: '6px 0 12px' }}>
-          下载支持 Range 断点续传；“并发下载”会用 4 个 Range 连接同时拉取同一个文件。
-        </p>
-        {loading ? (
-          <p style={{ fontSize: 13 }}>加载中…</p>
-        ) : files.length === 0 ? (
-          <p style={{ fontSize: 13, color: '#666' }}>还没有文件，先上传一个试试。</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ textAlign: 'left', color: '#666' }}>
-                <th style={{ padding: '6px 4px' }}>文件名</th>
-                <th style={{ padding: '6px 4px' }}>大小</th>
-                <th style={{ padding: '6px 4px' }}>上传时间</th>
-                <th style={{ padding: '6px 4px' }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {files.map((file) => (
-                <tr key={file.id} style={{ borderTop: '1px solid #f0f0ed' }}>
-                  <td style={{ padding: '8px 4px' }}>{file.original_filename}</td>
-                  <td style={{ padding: '8px 4px' }}>{formatSize(file.size_bytes)}</td>
-                  <td style={{ padding: '8px 4px', color: '#666' }}>
-                    {file.created_at.slice(0, 19).replace('T', ' ')}
-                  </td>
-                  <td style={{ padding: '8px 4px' }}>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button className="ws-button light" onClick={() => startDownload(file)}>
-                        下载
-                      </button>
-                      <button className="ws-button light" onClick={() => void parallelDownload(file)}>
-                        并发下载
-                      </button>
-                      <button className="ws-button danger" onClick={() => void removeFile(file)}>
-                        删除
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {download && (
-          <div style={{ marginTop: 16, borderTop: '1px solid #f0f0ed', paddingTop: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-              <span>
-                正在下载 {download.filename}（{formatSize(download.received)} / {formatSize(download.total)}）
-              </span>
-              <span>{downloadPercent}%</span>
-            </div>
-            <div style={barStyle}>
-              <div style={{ width: `${downloadPercent}%`, height: '100%', background: '#2463eb', transition: 'width .2s' }} />
-            </div>
-            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-              {download.running && !download.paused && (
-                <button className="ws-button light" onClick={pauseDownload}>
-                  暂停
-                </button>
-              )}
-              {(download.paused || download.error) && download.received < download.total && (
-                <button className="ws-button" onClick={resumeDownload}>
-                  继续下载（从 {formatSize(download.received)} 处续传）
-                </button>
-              )}
-            </div>
-            {download.error && <p style={{ fontSize: 12, color: '#ba3f4c', margin: '8px 0 0' }}>{download.error}</p>}
-          </div>
-        )}
-        {parallelInfo && <p style={{ fontSize: 12, color: '#228764', margin: '10px 0 0' }}>{parallelInfo}</p>}
-      </section>
-    </>
-  );
+    } catch (error) { job.error = message(error); job.paused = true; log(job.error); }
+    finally { job.running = false; refresh(); }
+  }
+  async function startDownload(file: Asset, connections: number) {
+    if (download.current?.running) { showToast('请先暂停当前下载', 'error'); return; }
+    const key = `${owner}:download:${file.id}`;
+    const cached = await getTransfer(key);
+    const job: Download = { key, kind: 'download', fileId: file.id, filename: file.original_filename, size: file.size_bytes, sha256: file.sha256 ?? '', etag: cached?.etag,
+      active: {}, confirmed: cached?.received ?? 0, running: false, paused: false, connections, complete: false };
+    download.current = job; refresh(); await runDownload(job);
+  }
+  function pause(kind: 'upload' | 'download') {
+    const job = kind === 'upload' ? upload.current : download.current;
+    if (job) job.paused = true;
+    (kind === 'upload' ? uploadControllers : downloadControllers).current.forEach(c => c.abort()); refresh();
+  }
+  const up = upload.current; const down = download.current;
+  const upPercent = up ? progress(up.confirmed, Object.values(up.active), up.size) : 0;
+  const downPercent = down ? progress(down.confirmed, Object.values(down.active), down.size) : 0;
+  return <>
+    <header className="ws-header"><div><p className="ws-kicker">FILES</p><h1>文件中心</h1><p>分片校验与重传、批量上传、刷新后续传、实时进度和并发下载。</p></div></header>
+    <section style={card}><h2>1. 大文件分片上传</h2><p>默认2MiB/片，3片并行；先增量计算整文件SHA-256。刷新后重新选择原文件，即可恢复服务端已确认的分片。</p>
+      <label className="ws-button light">选择文件 / 重新选择原文件<input aria-label="分片上传文件" type="file" disabled={!!up?.running || hashing !== null} onChange={e => { const file = e.target.files?.[0]; if (file) void selectFile(file); e.target.value = ''; }} /></label>
+      <label style={{ marginLeft: 12 }}><input type="checkbox" checked={corrupt} onChange={e => setCorrupt(e.target.checked)} />演示：故意损坏一个分片并观察自动重传</label>
+      {hashing !== null && <Bar value={hashing} label="计算文件指纹" />}
+      {hint && !up && <p>待续传：{hint.filename}（{size(hint.size)}），请选择同一原文件。<button onClick={() => void cancelUpload()}>取消旧任务</button></p>}
+      {up && <div><Bar value={up.complete ? 100 : Math.min(99.9, upPercent)} label={`${up.filename} · ${size(up.confirmed)} / ${size(up.size)}`} />
+        <p>{up.complete ? '服务器合并与整文件校验已完成' : `${up.states.filter(s => s === 'done').length}/${up.states.length}片已确认（100%发送不等于合并完成）`}</p>
+        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>{up.states.map((state, i) => <span key={i} title={`分片${i}：${state}`} style={{ width: 10, height: 10, background: ({ pending: '#ddd', uploading: '#2463eb', done: '#228764', failed: '#ba3f4c' })[state] }} />)}</div>
+        {!up.complete && <p><button disabled={!up.running || up.paused} onClick={() => pause('upload')}>暂停上传</button> <button disabled={up.running} onClick={() => void resumeUpload()}>继续上传</button> <button disabled={up.running} onClick={() => void cancelUpload()}>取消任务</button></p>}
+        {up.error && <p role="alert">{up.error}</p>}</div>}
+    </section>
+    <section style={card}><h2>2. 小文件批量上传</h2><p>一次multipart请求包含多个files字段，逐个返回成功/失败结果。最多24个，每个5MiB。</p>
+      <input aria-label="批量上传文件" type="file" multiple disabled={batchBusy} onChange={e => { if (e.target.files?.length) void uploadBatch(e.target.files); e.target.value = ''; }} />
+      {(batchBusy || batchResults.length > 0) && <Bar value={batchPercent} label={batchBusy && batchPercent >= 99 ? '服务器处理中' : '批量上传'} />}
+      <ul>{batchResults.map((item, i) => <li key={i}>{item.filename}：{item.ok ? '成功' : item.error}</li>)}</ul>
+    </section>
+    <section style={card}><h2>3. 文件列表与下载</h2><p>Range下载每个2MiB分块写入浏览器IndexedDB，暂停/刷新后仍保留；重新点击同一文件即可续传。并发下载使用4个Range连接。下载完成后本地核对整文件SHA-256。</p>
+      <p>完成的下载缓存会保留以便再次保存；可点击“清除下载缓存”释放本浏览器空间。</p>
+      <table style={{ width: '100%', textAlign: 'left' }}><thead><tr><th>文件名</th><th>大小</th><th>操作</th></tr></thead><tbody>{assets.map(file => <tr key={file.id}><td>{file.original_filename}</td><td>{size(file.size_bytes)}</td><td>
+        <button onClick={() => void startDownload(file, 1).catch(e => showToast(message(e), 'error'))}>下载 / 续传</button> <button onClick={() => void startDownload(file, 4).catch(e => showToast(message(e), 'error'))}>4连接并发下载</button> <button disabled={!!down?.running} onClick={() => void clearTransfer(`${owner}:download:${file.id}`).then(() => { if (down?.fileId === file.id) download.current = null; refresh(); showToast('下载缓存已清除'); }).catch(e => showToast(message(e), 'error'))}>清除下载缓存</button> <button onClick={() => { if (window.confirm(`删除${file.original_filename}？`)) void api(`/files/${file.id}`, { method: 'DELETE' }).then(load).catch(e => showToast(message(e), 'error')); }}>删除</button>
+      </td></tr>)}</tbody></table>
+      {down && <div><Bar value={down.complete ? 100 : Math.min(99.9, downPercent)} label={`${down.filename} · 已缓存${size(down.confirmed)} / ${size(down.size)}`} />
+        <p>{down.complete ? '下载完成，SHA-256校验通过' : down.paused ? '已暂停，缓存可跨刷新恢复' : '下载中 / 本地完整性校验中'}</p>
+        <button disabled={!down.running || down.paused} onClick={() => pause('download')}>暂停下载</button> <button disabled={down.running} onClick={() => void runDownload(down)}>继续下载 / 再次保存</button>
+        {down.error && <p role="alert">{down.error}</p>}</div>}
+    </section>
+    <section style={card}><h2>传输日志</h2><ol aria-label="传输日志">{logs.map((entry, i) => <li key={i}>{entry}</li>)}</ol></section>
+  </>;
 }
