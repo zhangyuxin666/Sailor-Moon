@@ -43,7 +43,7 @@ public class SecurityConfig {
                         .frameOptions(frame -> frame.deny())
                         .referrerPolicy(policy -> policy.policy(org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy.SAME_ORIGIN))
                         .contentSecurityPolicy(csp -> csp.policyDirectives(
-                                "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")))
+                                "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")))
                 .addFilterBefore(originFilter, AnonymousAuthenticationFilter.class)
                 .addFilterBefore(sessionFilter, AnonymousAuthenticationFilter.class);
         return http.build();

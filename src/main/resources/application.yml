@@ -3,6 +3,9 @@ server:
   forward-headers-strategy: framework
 
 spring:
+  threads:
+    virtual:
+      enabled: true
   servlet:
     multipart:
       # 单文件上限由业务层 app.upload-max-mb 控制；这里给批量上传留出请求总大小

@@ -1,0 +1,25 @@
+{
+  "checks": [
+    "全新PostgreSQL迁移完成，独立测试账号登录",
+    "损坏分片被400拒收，并返回CHUNK_CHECKSUM_MISMATCH及准确编号",
+    "乱序上传、已传分片查询和缺片定点重传正常",
+    "磁盘分块损坏可精确修复，合并整文件哈希一致，重复complete幂等",
+    "一次multipart请求批量上传，逐文件成功/失败结果正确",
+    "HEAD、206/416、后缀Range、If-Range防混拼、304及匿名访问控制正确",
+    "24工作线程/120次并发Range请求全部内容正确，无跨请求字节串扰",
+    "浏览器故意损坏自动重传，暂停后刷新重选原文件完成上传",
+    "浏览器批量上传与进度结果展示正常",
+    "下载真实字节跨刷新保留，4连接补齐剩余块，导出文件SHA-256一致"
+  ],
+  "passed": 10,
+  "load": {
+    "requests": 120,
+    "workers": 24,
+    "observed_in_flight": 24,
+    "bytes": 31457280,
+    "seconds": 13.367,
+    "requests_per_second": 8.98
+  },
+  "isolated_database": "sm-files-f6b7932f",
+  "production_data_touched": false
+}
