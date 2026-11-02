@@ -7,20 +7,22 @@
 /* ---------- 设计变量（来自 theme.css） ---------- */
 :root {
   color-scheme: light;
-  --ink: #171717;
-  --ink-soft: #282828;
-  --muted: #737373;
-  --muted-2: #a3a3a3;
-  --line: #e5e5e2;
-  --line-strong: #d4d4d0;
+  --ink: #1b1f27;
+  --ink-soft: #2a2f3a;
+  --muted: #7a828e;
+  --muted-2: #a7adb8;
+  --line: #eceef1;
+  --line-strong: #dde0e6;
   --paper: #ffffff;
-  --canvas: #fbfbfa;
-  --surface: #f4f4f1;
-  --surface-2: #ededeb;
-  --blue: #2463eb;
-  --blue-soft: #eaf0ff;
-  --green: #228764;
-  --green-soft: #e7f6ef;
+  --canvas: #ffffff;
+  --surface: #f6f7fb;
+  --surface-2: #eef0f5;
+  --primary: #4d6bfe;
+  --primary-strong: #3f56e3;
+  --blue: #4d6bfe;
+  --blue-soft: #eef0fe;
+  --green: #2f9e6e;
+  --green-soft: #e6f6ef;
   --amber: #9a641f;
   --amber-soft: #fbf0db;
   --red: #ba3f4c;
@@ -29,8 +31,8 @@
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 18px;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .035), 0 5px 18px rgba(0, 0, 0, .025);
-  --shadow-lg: 0 24px 70px rgba(0, 0, 0, .12);
+  --shadow-sm: 0 1px 2px rgba(27, 31, 39, .04), 0 5px 18px rgba(77, 107, 254, .06);
+  --shadow-lg: 0 24px 70px rgba(27, 31, 39, .12);
   --font-sans: "Manrope", Inter, ui-sans-serif, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-display: "Bricolage Grotesque", "Arial Narrow", var(--font-sans);
   --font-mono: "SFMono-Regular", "Cascadia Code", Consolas, monospace;
@@ -49,21 +51,11 @@ body {
   margin: 0;
   color: var(--ink);
   background-color: var(--canvas);
-  background-image: radial-gradient(circle, rgba(23, 23, 23, .105) .7px, transparent .8px);
-  background-position: 0 0;
-  background-size: 22px 22px;
+  background-image: radial-gradient(ellipse 90% 55% at 50% -12%, rgba(77, 107, 254, .08), transparent 65%);
+  background-repeat: no-repeat;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-}
-
-body::before {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  content: "";
-  background: linear-gradient(180deg, rgba(251, 251, 250, .3), var(--canvas) 82%);
-  pointer-events: none;
 }
 
 button, input, textarea, select { font: inherit; }
@@ -90,8 +82,8 @@ input, textarea, select {
 input:hover, textarea:hover, select:hover { border-color: var(--line-strong); }
 
 input:focus, textarea:focus, select:focus {
-  border-color: var(--ink);
-  box-shadow: 0 0 0 3px rgba(23, 23, 23, .07);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(77, 107, 254, .14);
   outline: none;
 }
 
@@ -165,8 +157,8 @@ dialog::backdrop {
   place-items: center;
   border-radius: 10px;
   color: #fff;
-  background: var(--ink);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .13);
+  background: var(--primary);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
   font-style: normal;
   font-size: 15px;
   font-weight: 850;
@@ -205,8 +197,8 @@ dialog::backdrop {
 
 .ws-nav a.active {
   color: #fff;
-  background: var(--ink);
-  box-shadow: var(--shadow-sm);
+  background: var(--primary);
+  box-shadow: 0 1px 2px rgba(77, 107, 254, .25), 0 5px 18px rgba(77, 107, 254, .18);
 }
 
 .ws-nav a span {
@@ -322,11 +314,11 @@ dialog::backdrop {
   justify-content: center;
   gap: 8px;
   padding: 9px 14px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--primary);
   border-radius: 9px;
   color: #fff;
-  background: var(--ink);
-  box-shadow: 0 1px 1px rgba(0, 0, 0, .08);
+  background: var(--primary);
+  box-shadow: 0 1px 1px rgba(77, 107, 254, .25);
   cursor: pointer;
   text-decoration: none;
   font-size: 11px;
@@ -335,15 +327,15 @@ dialog::backdrop {
 }
 
 .ws-button:hover {
-  background: #292929;
-  box-shadow: 0 5px 16px rgba(0, 0, 0, .12);
+  background: var(--primary-strong);
+  box-shadow: 0 5px 16px rgba(77, 107, 254, .28);
   transform: translateY(-1px);
 }
 
 .ws-button:disabled { opacity: .5; cursor: wait; transform: none; }
 .ws-button.light { border-color: var(--line-strong); color: var(--ink); background: var(--paper); box-shadow: none; }
-.ws-button.light:hover { border-color: var(--ink); background: var(--surface); }
-.ws-button.dark { border-color: #303030; background: #303030; }
+.ws-button.light:hover { border-color: var(--primary); background: var(--surface); }
+.ws-button.dark { border-color: var(--primary-strong); background: var(--primary-strong); }
 .ws-button.danger { border-color: #efc9ce; color: var(--red); background: var(--red-soft); box-shadow: none; }
 
 .ws-metrics {
@@ -368,12 +360,12 @@ dialog::backdrop {
 
 .ws-metric:first-child {
   color: #fff;
-  border-color: var(--ink);
-  background: var(--ink);
+  border-color: var(--primary);
+  background: var(--primary);
 }
 
 .ws-metric span { color: var(--muted); font-size: 10px; font-weight: 750; }
-.ws-metric:first-child span, .ws-metric:first-child em { color: #a8a8a8; }
+.ws-metric:first-child span, .ws-metric:first-child em { color: rgba(255, 255, 255, .78); }
 .ws-metric strong { margin: 9px 0; font-family: var(--font-display); font-size: 31px; letter-spacing: -.04em; }
 .ws-metric em { color: var(--muted-2); font-size: 9px; font-style: normal; }
 
@@ -442,9 +434,9 @@ dialog::backdrop {
   align-items: center;
   justify-content: center;
   padding: 5px 8px;
-  border: 1px solid #d9e3ff;
+  border: 1px solid #dbe3ff;
   border-radius: 999px;
-  color: #315bb9;
+  color: var(--blue);
   background: var(--blue-soft);
   font-family: var(--font-mono);
   font-size: 8px;
@@ -496,7 +488,7 @@ dialog::backdrop {
 
 /* ---------- 状态点 / 进度条 ---------- */
 .progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: var(--surface-2); }
-.progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--ink); }
+.progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
 .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted-2); box-shadow: 0 0 0 5px rgba(163, 163, 163, .12); }
 .status-dot.online { background: var(--green); box-shadow: 0 0 0 5px rgba(34, 135, 100, .12); }
 
@@ -599,7 +591,7 @@ dialog::backdrop {
 .task-item strong, .task-item small { display: block; }
 .task-item strong { font-size: 11px; }
 .task-item small { margin-top: 4px; color: var(--muted); font-size: 9px; }
-.task-toggle { width: 17px; height: 17px; accent-color: var(--ink); }
+.task-toggle { width: 17px; height: 17px; accent-color: var(--primary); }
 .task-owner { display: flex; align-items: center; gap: 8px; }
 .task-nudge {
   padding: 6px 9px;
@@ -611,7 +603,7 @@ dialog::backdrop {
   font-size: 9px;
   font-weight: 700;
 }
-.task-nudge:hover { color: var(--ink); border-color: var(--ink); }
+.task-nudge:hover { color: var(--primary); border-color: var(--primary); }
 
 .step-list { display: grid; gap: 7px; }
 .step-item {
@@ -690,32 +682,32 @@ dialog::backdrop {
   overflow: hidden;
   margin-bottom: 12px;
   padding: clamp(26px, 4vw, 46px);
-  border: 1px solid #2d2d2d;
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
   color: #fff;
-  background: #181818;
-  box-shadow: var(--shadow-lg);
+  background: linear-gradient(135deg, #5b7cff 0%, #4d6bfe 55%, #3f56e3 100%);
+  box-shadow: 0 24px 70px rgba(77, 107, 254, .28);
   animation: ui-rise .45s ease both;
 }
 .agent-hero::before {
   position: absolute;
   inset: 0;
   content: "";
-  background-image: radial-gradient(circle, rgba(255, 255, 255, .13) .7px, transparent .8px);
+  background-image: radial-gradient(circle, rgba(255, 255, 255, .18) .7px, transparent .8px);
   background-size: 20px 20px;
   mask-image: linear-gradient(135deg, #000, transparent 72%);
   pointer-events: none;
 }
 .agent-hero > * { position: relative; }
 .agent-hero h2 { margin-bottom: 8px; font-family: var(--font-display); font-size: clamp(27px, 3vw, 39px); letter-spacing: -.045em; }
-.agent-hero > p { color: #a8a8a8; font-size: 12px; }
+.agent-hero > p { color: rgba(255, 255, 255, .85); font-size: 12px; }
 
 .agent-compose {
   overflow: hidden;
   margin-top: 24px;
-  border: 1px solid #444;
+  border: 1px solid rgba(255, 255, 255, .22);
   border-radius: 12px;
-  background: #222;
+  background: rgba(255, 255, 255, .14);
 }
 .agent-compose textarea {
   width: 100%;
@@ -730,7 +722,7 @@ dialog::backdrop {
   line-height: 1.7;
 }
 .agent-compose textarea:focus { box-shadow: none; }
-.agent-compose textarea::placeholder { color: #777; }
+.agent-compose textarea::placeholder { color: rgba(255, 255, 255, .6); }
 
 .agent-compose-footer {
   display: flex;
@@ -738,23 +730,23 @@ dialog::backdrop {
   justify-content: space-between;
   gap: 12px;
   padding: 12px;
-  border-top: 1px solid #393939;
+  border-top: 1px solid rgba(255, 255, 255, .22);
 }
-.agent-compose-footer .ws-select { border-color: #454545; color: #ddd; background: #282828; }
-.agent-compose-footer .ws-button { color: var(--ink); border-color: #fff; background: #fff; }
+.agent-compose-footer .ws-select { border-color: rgba(255, 255, 255, .35); color: #fff; background: rgba(27, 40, 120, .42); }
+.agent-compose-footer .ws-button { color: var(--primary); border-color: #fff; background: #fff; }
 
 .example-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-.example-chips button { padding: 7px 10px; border: 1px solid #3c3c3c; border-radius: 999px; color: #bcbcbc; background: transparent; cursor: pointer; font-size: 9px; }
-.example-chips button:hover { color: #fff; border-color: #777; }
+.example-chips button { padding: 7px 10px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 999px; color: rgba(255, 255, 255, .85); background: transparent; cursor: pointer; font-size: 9px; }
+.example-chips button:hover { color: #fff; border-color: #fff; }
 
 .draft-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(260px, .55fr); gap: 12px; }
 .draft-badges { display: flex; flex-wrap: wrap; gap: 6px; }
-.draft-badge { padding: 5px 8px; border-radius: 999px; color: #315bb9; background: var(--blue-soft); font-size: 8px; font-weight: 750; }
+.draft-badge { padding: 5px 8px; border-radius: 999px; color: var(--blue); background: var(--blue-soft); font-size: 8px; font-weight: 750; }
 .draft-badge.complex { color: var(--red); background: var(--red-soft); }
 
 .reason-box {
   padding: 14px;
-  border-left: 3px solid var(--ink);
+  border-left: 3px solid var(--primary);
   border-radius: 0 8px 8px 0;
   color: #565656;
   background: var(--surface);
@@ -766,7 +758,7 @@ dialog::backdrop {
 .missing-list span { padding: 6px 9px; border-radius: 999px; color: var(--amber); background: var(--amber-soft); font-size: 9px; }
 .workflow-list { display: grid; gap: 7px; }
 .workflow-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); font-size: 10px; font-weight: 700; }
-.workflow-item input { width: 17px; height: 17px; accent-color: var(--ink); }
+.workflow-item input { width: 17px; height: 17px; accent-color: var(--primary); }
 .publish-bar { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 6px; }
 
 /* ---------- 登录页（来自 portal.css） ---------- */
@@ -830,9 +822,9 @@ dialog::backdrop {
   display: grid;
   place-items: center;
   border-radius: 10px;
-  color: var(--ink);
-  background: var(--yellow);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06);
+  color: #fff;
+  background: var(--primary);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
   font-size: 14px;
   font-weight: 900;
 }
@@ -860,12 +852,12 @@ dialog::backdrop {
 }
 
 .auth-hero h1 {
-  margin-bottom: 28px;
+  margin-bottom: 30px;
   font-family: var(--font-display);
-  font-size: clamp(44px, 5vw, 68px);
-  font-weight: 850;
-  letter-spacing: -.065em;
-  line-height: .96;
+  font-size: clamp(36px, 4vw, 52px);
+  font-weight: 760;
+  letter-spacing: -.01em;
+  line-height: 1.28;
 }
 
 .auth-hero ul {
@@ -879,7 +871,7 @@ dialog::backdrop {
 }
 
 .auth-hero li { display: flex; align-items: center; gap: 9px; }
-.auth-hero li::before { width: 16px; height: 16px; display: grid; place-items: center; content: "✓"; border-radius: 50%; color: #fff; background: var(--ink); font-size: 9px; }
+.auth-hero li::before { width: 16px; height: 16px; display: grid; place-items: center; content: "✓"; border-radius: 50%; color: #fff; background: var(--primary); font-size: 9px; }
 
 .auth-form-panel {
   display: grid;
@@ -902,10 +894,10 @@ dialog::backdrop {
   justify-content: space-between;
   margin-top: 4px;
   padding: 11px 15px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--primary);
   border-radius: 9px;
   color: #fff;
-  background: var(--ink);
+  background: var(--primary);
   cursor: pointer;
   font-size: 11px;
   font-weight: 800;
@@ -923,7 +915,7 @@ dialog::backdrop {
   color: var(--muted) !important;
   font-weight: 500 !important;
 }
-.privacy-check input { width: auto; accent-color: var(--ink); }
+.privacy-check input { width: auto; accent-color: var(--primary); }
 .privacy-check a { color: var(--ink); text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 
 /* ---------- 隐私政策页 ---------- */
@@ -943,8 +935,8 @@ dialog::backdrop {
   display: grid;
   place-items: center;
   border-radius: 10px;
-  color: var(--ink);
-  background: var(--yellow);
+  color: #fff;
+  background: var(--primary);
   font-size: 11px;
   font-weight: 900;
 }
@@ -961,7 +953,7 @@ dialog::backdrop {
 .form-time {
   margin: 20px 0 26px;
   padding: 11px;
-  border-left: 3px solid var(--ink);
+  border-left: 3px solid var(--primary);
   border-radius: 0 8px 8px 0;
   color: #505050;
   background: var(--surface);
@@ -981,7 +973,7 @@ dialog::backdrop {
   margin: 0 auto 15px;
   border-radius: 50%;
   color: #fff;
-  background: var(--ink);
+  background: var(--primary);
   font-size: 20px;
 }
 .form-success h2 { margin-bottom: 7px; font-family: var(--font-display); font-size: 27px; }
@@ -1007,7 +999,7 @@ dialog::backdrop {
   place-items: center;
   border-radius: 9px;
   color: #fff;
-  background: var(--ink);
+  background: var(--primary);
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 850;
@@ -1077,20 +1069,85 @@ dialog::backdrop {
   .auth-form-panel { padding: 38px 24px 55px; }
 }
 
-/* Keep activity forms and long management history inside their grid tracks. */
-.ws-grid > *, .ws-panel, .ws-list, .ws-list-item > *,
-.ws-form, .ws-form fieldset, .ws-form label { min-width: 0; }
-[aria-label="任务管理"] .ws-list-item strong,
-[aria-label="任务管理"] .ws-list-item small,
-[aria-label="活动变更记录"] .ws-list-item strong,
-[aria-label="活动变更记录"] .ws-list-item small {
-  white-space: normal;
-  overflow-wrap: anywhere;
+/* ============================================================
+   DeepSeek 蓝白风格强化（追加段，可随时整段删除还原）
+   ============================================================ */
+:root {
+  --primary: #4d6bfe;
+  --primary-strong: #3b56e8;
+  --blue: #4d6bfe;
+  --blue-soft: #eef0fe;
+  --canvas: #ffffff;
+  --paper: #ffffff;
+  --surface: #f6f7fb;
+  --surface-2: #eef0f5;
+  --line: #eaedf3;
+  --line-strong: #dde0e6;
+  --ink: #1b1f27;
+  --muted: #7a828e;
+  --muted-2: #a7adb8;
 }
-@media (max-width: 680px) {
-  [aria-label="任务管理"] .ws-list-item,
-  [aria-label="活动变更记录"] .ws-list-item { grid-template-columns: minmax(0, 1fr); }
-  .ws-cluster-node { display: none; }
-  .ws-sidebar { flex-wrap: wrap; }
-  .ws-user { margin-left: auto; }
+
+/* 页面背景：DeepSeek 式淡蓝色网格 */
+body {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(rgba(77, 107, 254, .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(77, 107, 254, .05) 1px, transparent 1px);
+  background-size: 44px 44px;
 }
+
+/* 登录页左侧品牌面板：白色 + 淡蓝网格 + 右上角蓝色光晕 */
+.auth-brand-panel {
+  background:
+    radial-gradient(circle at 88% 12%, rgba(77, 107, 254, .12), transparent 55%),
+    linear-gradient(rgba(77, 107, 254, .055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(77, 107, 254, .055) 1px, transparent 1px),
+    #ffffff;
+  background-size: auto, 44px 44px, 44px 44px, auto;
+}
+
+/* 登录按钮：蓝色渐变 */
+.auth-form > button {
+  border: 1px solid #4d6bfe;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #4d6bfe 0%, #6a8bff 100%);
+  box-shadow: 0 4px 14px rgba(77, 107, 254, .28);
+}
+
+/* 全局主按钮、侧边栏高亮、Logo 图标：统一蓝色渐变 */
+.ws-button,
+.ws-nav a.active,
+.ws-logo i,
+.portal-brand > span {
+  border-color: #4d6bfe;
+  background: linear-gradient(135deg, #4d6bfe 0%, #6a8bff 100%);
+}
+
+/* 工作台第一个数据卡片：蓝色渐变 */
+.ws-metric:first-child {
+  border-color: #4d6bfe;
+  background: linear-gradient(135deg, #4d6bfe 0%, #6a8bff 100%);
+}
+
+/* 卡片更白更干净 */
+.ws-panel,
+.ws-metric {
+  background: #ffffff;
+  border-color: #eaedf3;
+}
+
+/* 侧边栏纯白微透明 */
+.ws-sidebar {
+  background: rgba(255, 255, 255, .95);
+}
+
+/* 蓝色文字点缀统一 */
+.ws-kicker,
+.auth-hero > p,
+.portal-eyebrow,
+.data-table a,
+.ws-tag {
+  color: #4d6bfe;
+}
+
