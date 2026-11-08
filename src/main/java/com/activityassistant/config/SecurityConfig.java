@@ -29,7 +29,7 @@ public class SecurityConfig {
                                 "/settings", "/knowledge", "/participation", "/templates", "/file-center",
                                 "/activity", "/activity/**", "/privacy", "/static/**", "/assets/**", "/favicon.*",
                                 "/health", "/health/ready", "/cluster/node", "/actuator/health/**", "/auth/status",
-                                "/auth/bootstrap", "/auth/login", "/public/forms/**", "/forms/**",
+                                "/auth/bootstrap", "/auth/login", "/auth/register", "/public/forms/**", "/forms/**",
                                 "/forms/*/registrations", "/internal/qq/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, exception) -> {

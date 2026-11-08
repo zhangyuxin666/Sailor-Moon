@@ -1,0 +1,35 @@
+{
+  "owner": "ConcernedApe / Stardew Valley",
+  "sources": {
+    "logo.png": "https://www.stardewvalley.net/wp-content/uploads/2017/12/main_logo.png",
+    "landscape.png": "https://www.stardewvalley.net/wp-content/uploads/2017/12/stardewbackground.png",
+    "bird.gif": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/stardew_bird.gif",
+    "chicken.png": "https://www.stardewvalley.net/wp-content/uploads/2017/12/cropped-chickenfavicon-192x192.png",
+    "menu-border.png": "https://www.stardewvalley.net/wp-content/uploads/2017/12/menu_border_noshadowtopleft.png",
+    "divider.png": "https://www.stardewvalley.net/wp-content/uploads/2017/12/sdv_divider.png",
+    "layer-1.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax1.png",
+    "layer-2.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax2.png",
+    "layer-3a.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax3a.png",
+    "layer-3b.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax3b.png",
+    "layer-4.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax4.png",
+    "layer-5.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax5.png",
+    "layer-6.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax6.png",
+    "layer-7.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax7.png",
+    "layer-8.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax8.png",
+    "layer-9.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax9.png",
+    "layer-10.png": "https://www.stardewvalley.net/wp-content/themes/stardewvalley/images/parallax/parallax10.png"
+  },
+  "font": {
+    "name": "Zpix",
+    "author": "SolidZORO",
+    "url": "https://github.com/SolidZORO/zpix-pixel-font/releases/tag/v3.3.0"
+  },
+  "generated_assets": {
+    "activity-manager-logo.png": {
+      "tool": "built-in image_gen",
+      "reference": "logo.png",
+      "description": "Chinese Activity Manager title, two rows, golden wooden pixel lettering, dark outlines and green leaves; transparent background",
+      "prompt_record": "docs/STARDEW_THEME.md"
+    }
+  }
+}

@@ -75,6 +75,34 @@ public class AuthService {
     }
 
     @Transactional
+    public LoginResult register(ApiModels.RegisterRequest body) {
+        if (!body.acceptPrivacy()) throw ApiException.badRequest("必须阅读并同意隐私政策与用户协议");
+        if (!List.of("manager", "participant").contains(body.role())) throw ApiException.badRequest("请选择管理者或参与者");
+        if (!initialized()) throw ApiException.badRequest("请先完成首位管理者初始化");
+        if (db.one("SELECT 1 FROM accounts WHERE username=?", body.username()).isPresent())
+            throw ApiException.badRequest("用户名已被使用，请换一个");
+        String now = LocalDateTime.now().toString();
+        String accountId;
+        try {
+            accountId = createAccount(body.username(), body.displayName(), body.password(), body.role(), "");
+        } catch (org.springframework.dao.DuplicateKeyException exception) {
+            throw ApiException.badRequest("用户名已被使用，请换一个");
+        }
+        db.update("INSERT INTO account_security (account_id, force_password_change, failed_logins, password_changed_at) VALUES (?, 0, 0, ?)", accountId, now);
+        String organizationId = null;
+        if ("manager".equals(body.role())) {
+            organizationId = Ids.shortId();
+            String name = body.organizationName() == null || body.organizationName().isBlank() ? body.displayName().trim() + "的组织" : body.organizationName().trim();
+            db.update("INSERT INTO organizations (id, name, owner_account_id, created_at) VALUES (?, ?, ?, ?)", organizationId, name, accountId, now);
+            db.update("INSERT INTO organization_members (organization_id, account_id, role, created_at) VALUES (?, ?, 'owner', ?)", organizationId, accountId, now);
+        }
+        db.update("INSERT INTO privacy_consents (account_id, policy_version, accepted_at) VALUES (?, '1.0', ?)", accountId, now);
+        audits.write("account.register", accountId, organizationId, "account", accountId, Map.of("role", body.role()));
+        AccountPrincipal account = db.one("SELECT a.*, 0 AS force_password_change FROM accounts a WHERE id=?", accountId).map(this::principal).orElseThrow();
+        return new LoginResult(account, createSession(accountId));
+    }
+
+    @Transactional
     public LoginResult login(ApiModels.LoginRequest body, String remoteAddress) {
         String key = remoteAddress + ":" + body.username();
         long cutoff = System.currentTimeMillis() - 300_000;

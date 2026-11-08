@@ -9,6 +9,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { passwordChangeRequired } from '../lib/auth-policy';
+import ValleyIcon from './ValleyIcon';
 
 const navItems = [
   { to: '/portal', label: '总览', icon: '◈', managerOnly: false },
@@ -29,6 +30,12 @@ export default function Layout() {
   const isManager = account?.role === 'manager';
   const mustChangePassword = passwordChangeRequired(account);
   const [clusterNode, setClusterNode] = useState<{ instance: string; port: number } | null>(null);
+  const [clock, setClock] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -55,10 +62,10 @@ export default function Layout() {
       {/* 侧边栏 */}
       <aside className="ws-sidebar">
         <NavLink to="/portal" className="ws-logo">
-          <i>活</i>
+          <i><img className="valley-brand-chicken" src="/assets/stardew/chicken.png" alt="" /></i>
           <span>
             <strong>活动管家</strong>
-            <small>CLASS OPS</small>
+            <small>CLASS JOURNAL</small>
           </span>
         </NavLink>
 
@@ -69,14 +76,16 @@ export default function Layout() {
               <NavLink
                 key={item.to}
                 to={item.to}
+                aria-label={item.label}
                 className={({ isActive }) => (isActive ? 'active' : '')}
               >
-                <span>{item.icon}</span>
+                <span><ValleyIcon glyph={item.icon} /></span>
                 {item.label}
               </NavLink>
             ))}
         </nav>
 
+        <div className="valley-sidebar-farm" aria-hidden="true" />
         {/* 底部用户信息 */}
         <div className="ws-user">
           <div className="ws-avatar">{account?.display_name?.slice(0, 1) || '?'}</div>
@@ -100,6 +109,12 @@ export default function Layout() {
 
       {/* 主内容区 */}
       <main className="ws-main">
+        <div className="valley-workspace-bar">
+          <span><img src="/assets/stardew/chicken.png" alt="" />今天也有新的收获</span>
+          <time dateTime={clock.toISOString()}>{new Intl.DateTimeFormat('zh-CN', {
+            timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'short',
+          }).format(clock)}</time>
+        </div>
         <Outlet />
       </main>
     </div>

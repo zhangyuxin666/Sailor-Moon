@@ -81,6 +81,11 @@ public class AuthController {
         return withCookie(auth.login(body, request.getRemoteAddr()));
     }
 
+    @PostMapping("/auth/register")
+    ResponseEntity<Map<String, Object>> register(@Valid @RequestBody ApiModels.RegisterRequest body) {
+        return withCookie(auth.register(body));
+    }
+
     @PostMapping("/auth/logout")
     ResponseEntity<Map<String, String>> logout(HttpServletRequest request) {
         auth.logout(rawToken(request));

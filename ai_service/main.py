@@ -5,8 +5,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from .config import settings
 from .chunker import split_document
 from .llm import AiEngine
-from .models import (ChunkRequest, EmbedRequest, PlanRequest, RagSearchRequest,
-                     RecapRequest, ReplyRequest, WorkRequest)
+from .models import (ChunkEmbedResponse, ChunkRequest, EmbeddedChunk,
+                     EmbedRequest, PlanRequest, RagSearchRequest, RecapRequest,
+                     ReplyRequest, WorkRequest)
 from .rag import RagStore
 
 app = FastAPI(
@@ -79,6 +80,35 @@ def chunk(body: ChunkRequest):
         "chunks": chunks,
         "count": len(chunks),
     }
+
+
+@app.post(
+    "/internal/ai/chunk-embed",
+    response_model=ChunkEmbedResponse,
+    dependencies=[Depends(require_internal_token)],
+)
+def chunk_embed(body: ChunkRequest) -> ChunkEmbedResponse:
+    """Split one document and generate an embedding for every resulting chunk."""
+    chunks = split_document(
+        content=body.content,
+        chunk_size=body.chunk_size,
+        overlap=body.overlap,
+    )
+    vectors = rag.embeddings.create_many(chunks)
+
+    embedded_chunks = [
+        EmbeddedChunk(
+            chunk_index=index,
+            content=content,
+            embedding=vector,
+        )
+        for index, (content, vector) in enumerate(zip(chunks, vectors, strict=True))
+    ]
+
+    return ChunkEmbedResponse(
+        embedding_profile=rag.embeddings.profile(),
+        chunks=embedded_chunks,
+    )
 
 
 @app.post("/internal/ai/embed", dependencies=[Depends(require_internal_token)])

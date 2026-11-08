@@ -51,7 +51,10 @@ async function xhr(url: string, method: string, body: XMLHttpRequestBodyInit, si
     if (signal.aborted) reject(new DOMException('已暂停', 'AbortError')); else request.send(body);
   });
 }
-const card: CSSProperties = { border: '1px solid #e5e5e2', borderRadius: 12, padding: 18, marginBottom: 18, background: '#fff' };
+const card: CSSProperties = {
+  border: '10px solid transparent', borderImage: 'var(--valley-frame) 15 / 10px stretch',
+  borderRadius: 0, padding: 18, marginBottom: 18, background: 'var(--paper)', boxShadow: 'var(--shadow-sm)',
+};
 function Bar({ value, label }: { value: number; label: string }) {
   return <div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span>{label}</span><span>{value.toFixed(1)}%</span></div>
     <progress aria-label={label} value={value} max={100} style={{ width: '100%', height: 14, accentColor: '#228764' }} /></div>;

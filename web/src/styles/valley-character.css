@@ -1,0 +1,75 @@
+/* Detailed LPC character dressing room, with native 64px frames. */
+.valley-character-layout { grid-template-columns: 340px minmax(0, 1fr); gap: 32px; }
+.valley-screen-account .valley-stage-content { max-width: 1120px; }
+.valley-detailed-editor { border: 4px double #a87b43; background: #e8c58c; box-shadow: inset 0 0 0 3px #f9dda7, 4px 5px #b7935b44; padding: 14px; min-width: 0; }
+.valley-editor-topline { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #77502c; margin-bottom: 10px; }
+.valley-editor-topline span:last-child { font-size: 9px; color: #947147; }
+.valley-farmer-stage { position: relative; isolation: isolate; height: 260px; overflow: hidden; background: linear-gradient(#acd9d4 0%, #d2e9ce 65%, #8ba267 65%, #71884f 100%); border: 4px solid #987247; box-shadow: inset 3px 3px #445e5a33; }
+.valley-farmer-stage::before { content: ''; position: absolute; left: -10%; right: -10%; bottom: 35%; height: 36%; background: #87bca2; clip-path: polygon(0 100%, 14% 40%, 24% 66%, 45% 10%, 65% 75%, 80% 30%, 100% 100%); }
+.valley-farmer-stage::after { content: ''; position: absolute; inset: 65% 0 0; opacity: .2; background: repeating-linear-gradient(0deg, transparent 0 15px, #f5e2ac 15px 17px), repeating-linear-gradient(90deg, transparent 0 15px, #f5e2ac 15px 17px); transform: perspective(100px) rotateX(25deg) scale(1.5); }
+.valley-stage-sun { position: absolute; top: 20px; right: 25px; width: 24px; height: 24px; background: #fff0a4; box-shadow: 4px 0 #fff0a4, -4px 0 #fff0a4, 0 4px #fff0a4, 0 -4px #fff0a4; }
+.valley-farmer-platform { position: absolute; bottom: 47px; left: 50%; width: 115px; height: 25px; transform: translateX(-50%); border-radius: 50%; background: #344a2d55; z-index: 1; }
+.valley-farmer-sprite { position: absolute; left: 50%; bottom: 34px; width: 256px; height: 256px; transform: translateX(-50%); image-rendering: pixelated; z-index: 2; }
+.valley-preview-name { position: absolute; inset: auto 0 9px; z-index: 3; color: #fff6d9; text-shadow: 1px 2px #4a6233; text-align: center; font-size: 13px; overflow-wrap: anywhere; }
+.valley-preview-name small { display: block; margin-top: 3px; font-size: 10px; color: #ece4b7; }
+.valley-turn-controls { display: flex; justify-content: center; gap: 6px; margin: 12px 0 14px; }
+.valley-detailed-editor button { font: inherit; cursor: pointer; border: 2px solid #ac824c; border-radius: 0; color: #77512e; background: #f8dda8; box-shadow: inset 1px 1px #fff1c9; }
+.valley-detailed-editor button:hover { filter: brightness(1.08); }
+.valley-detailed-editor button[aria-pressed=true] { background-color: #fff1bc; border-color: #768a42; box-shadow: inset 0 -3px #a6b36d; color: #4f6838; }
+.valley-turn-controls button { min-width: 34px; height: 30px; font-size: 16px; }
+.valley-turn-controls .valley-walk-toggle { font-size: 11px; padding: 0 9px; }
+.valley-body-picker { display: flex; gap: 10px; align-items: center; font-size: 11px; padding: 0 0 12px; }
+.valley-body-picker > span { margin-right: auto; }
+.valley-body-picker button { padding: 6px 12px; font-size: 11px; }
+.valley-editor-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 2px solid #b4925d; }
+.valley-editor-tabs button { padding: 8px 4px; border-bottom: 0; font-size: 12px; }
+.valley-style-stepper { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; }
+.valley-style-stepper button { width: 28px; height: 28px; font-size: 12px; }
+.valley-style-stepper > span { text-align: center; font-size: 12px; }
+.valley-style-stepper small { display: block; font-size: 9px; color: #9b794d; margin-top: 3px; }
+.valley-hair-catalog { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.valley-hair-catalog button { height: 46px; overflow: hidden; position: relative; background: #d5b783; }
+.valley-hair-thumbnail { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); width: 64px; height: 56px; background-position: 0 -128px; background-size: 576px 256px; background-repeat: no-repeat; image-rendering: pixelated; }
+.valley-hair-catalog small { position: absolute; bottom: 1px; right: 3px; font-size: 8px; color: #82633a; }
+.valley-outfit-catalog { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.valley-outfit-catalog button { padding: 10px 5px; font-size: 11px; }
+.valley-color-settings { margin: 14px 0; }
+.valley-color-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) 25px; align-items: center; gap: 6px; margin: 10px 0; }
+.valley-color-row > span { font-size: 11px; }
+.valley-color-row > div { display: flex; gap: 5px; justify-content: space-between; }
+.valley-color-row button { width: 22px; height: 22px; padding: 0; box-shadow: inset 1px 1px #ffffff55; }
+.valley-color-row button[aria-pressed=true] { outline: 2px solid #fff7d5; outline-offset: 1px; box-shadow: inset 0 0 0 2px #5f6b39; }
+.valley-color-row label { display: block; width: 25px; height: 25px; }
+.valley-color-row input[type=color] { width: 25px; height: 25px; padding: 0; border: 2px solid #98703f; background: transparent; cursor: pointer; }
+.valley-editor-actions { display: flex; justify-content: space-between; gap: 10px; padding-top: 10px; border-top: 2px solid #c39e68; }
+.valley-editor-actions button { padding: 7px 9px; font-size: 10px; }
+.valley-editor-storage, .valley-sprite-credits { display: block; text-align: center; margin-top: 12px; font-size: 9px; color: #907047; }
+.valley-sprite-credits { margin-top: 7px; text-underline-offset: 3px; }
+[data-motion=paused] .valley-home-clouds-near { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .valley-screen-title .valley-home-clouds-near { animation: none; transform: scaleX(-1); }
+}
+@media (max-width: 900px) and (min-width: 721px) {
+  .valley-character-layout { grid-template-columns: 290px minmax(0, 1fr); gap: 20px; }
+  .valley-screen-account .valley-stage-content { padding: 25px 20px; }
+}
+@media (max-width: 720px) {
+  .valley-character-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .valley-detailed-editor { max-width: 380px; width: 100%; margin-inline: auto; padding: 12px; }
+  .valley-farmer-stage { height: 250px; }
+  .valley-color-row { gap: 4px; }
+  .valley-color-row > div { gap: 3px; }
+  .valley-color-row button { width: 20px; height: 22px; }
+  .valley-title-toolbar { inset: 12px 14px auto; }
+  .valley-title-toolbar > span { font-size: 14px; }
+  .valley-title-toolbar img { width: 26px; }
+  .valley-title-toolbar button { font-size: 10px; padding: 6px; }
+  .valley-title-footer { inset: auto 12px 15px; gap: 12px; font-size: 8px; }
+  .valley-title-invitation { bottom: calc(15svh + 148px); font-size: 10px; }
+}
+@media (max-height: 540px) and (min-width: 721px) {
+  .valley-title-invitation { bottom: calc(5svh + 110px); font-size: 10px; }
+  .valley-title-caption > span { display: none; }
+  .valley-title-toolbar { inset: 10px 15px auto; }
+  .valley-title-footer { bottom: 8px; font-size: 8px; }
+}

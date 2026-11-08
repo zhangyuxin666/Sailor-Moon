@@ -27,6 +27,13 @@ public final class ApiModels {
     }
 
     public record LoginRequest(@NotBlank String username, @NotBlank String password) {}
+    public record RegisterRequest(
+            @NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{3,40}") String username,
+            @NotBlank @Size(max = 40) String displayName,
+            @NotBlank @Size(min = 8, max = 128) String password,
+            @NotBlank @Pattern(regexp = "manager|participant") String role,
+            @Size(max = 80) String organizationName,
+            boolean acceptPrivacy) {}
     public record PasswordChangeRequest(@NotBlank String currentPassword,
                                         @NotBlank @Size(min = 8, max = 128) String newPassword) {}
     public record PasswordResetRequest(@NotBlank @Size(min = 8, max = 128) String newPassword) {}

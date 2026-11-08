@@ -1,0 +1,152 @@
+/* Official-site landscape, without the old video opening or four-item menu. */
+.valley-home {
+  --scene-x: 0px; --scene-y: 0px;
+  position: relative; isolation: isolate; width: 100%; height: 100svh;
+  min-height: 360px; overflow: hidden; background: #0781d9;
+}
+.valley-visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.valley-home-scenery { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.valley-home-scenery > div { position: absolute; inset: 0; image-rendering: pixelated; background-repeat: repeat-x; }
+.valley-home-gradient { background: url('/assets/stardew/layer-1.png') center / 100% 100%; }
+.valley-home-stars { background: url('/assets/stardew/layer-2.png') center top / auto 100%; animation: valley-home-twinkle 5s ease-in-out infinite alternate; }
+.valley-home-scenery .valley-home-clouds { inset: 0 -25%; background-size: auto 112%; }
+.valley-home-clouds-far { background-image: url('/assets/stardew/layer-3a.png'); animation: valley-home-clouds 100s linear infinite; }
+.valley-home-clouds-near { background-image: url('/assets/stardew/layer-3b.png'); animation: valley-home-clouds 160s linear infinite reverse; }
+.valley-home-scenery .valley-home-mountain { inset: -12px -22px; background-position: center bottom; background-size: auto 125%; transition: transform .5s ease-out; }
+.valley-home-mountain-4 { background-image: url('/assets/stardew/layer-4.png'); transform: translate3d(calc(var(--scene-x) * .15), calc(var(--scene-y) * .15), 0); }
+.valley-home-mountain-5 { background-image: url('/assets/stardew/layer-5.png'); transform: translate3d(calc(var(--scene-x) * .3), calc(var(--scene-y) * .3), 0); }
+.valley-home-mountain-6 { background-image: url('/assets/stardew/layer-6.png'); transform: translate3d(calc(var(--scene-x) * .5), calc(var(--scene-y) * .5), 0); }
+.valley-home-mountain-7 { background-image: url('/assets/stardew/layer-7.png'); transform: translate3d(calc(var(--scene-x) * .7), calc(var(--scene-y) * .7), 0); }
+.valley-home-mountain-8 { background-image: url('/assets/stardew/layer-8.png'); transform: translate3d(var(--scene-x), var(--scene-y), 0); }
+.valley-home-scenery .valley-home-tree { inset: -12px -20px; background-size: auto 125%; background-repeat: no-repeat; transform: translate3d(var(--scene-x), var(--scene-y), 0); transition: transform .5s ease-out; }
+.valley-home-tree-left { background-image: url('/assets/stardew/layer-9.png'); background-position: left bottom; }
+.valley-home-tree-right { background-image: url('/assets/stardew/layer-10.png'); background-position: right bottom; }
+.valley-home-scenery .valley-home-farm {
+  inset: auto -20px 0; height: 52%; background: url('/assets/stardew/divider.png') center bottom / max(100vw, 1600px) auto no-repeat;
+  transform: translate3d(calc(var(--scene-x) * 1.2), 0, 0); transition: transform .5s ease-out;
+}
+.valley-home-bird { position: absolute; left: -80px; width: 48px; image-rendering: pixelated; animation: valley-home-flight 36s linear infinite; }
+.valley-home-bird-one { top: 36%; animation-delay: -8s; }
+.valley-home-bird-two { top: 44%; width: 32px; animation-delay: -25s; }
+.valley-home-logo { position: absolute; top: 3svh; left: 50%; width: min(684px, 65vw); height: auto; transform: translateX(-50%); image-rendering: pixelated; filter: drop-shadow(3px 5px 0 #163f5045); pointer-events: none; user-select: none; }
+[data-motion=paused] .valley-home-stars, [data-motion=paused] .valley-home-clouds, [data-motion=paused] .valley-home-bird { animation-play-state: paused; }
+[data-motion=paused] .valley-home-bird { visibility: hidden; }
+@keyframes valley-home-clouds { from { background-position-x: 0; } to { background-position-x: 1536px; } }
+@keyframes valley-home-twinkle { from { opacity: .45; } to { opacity: 1; } }
+@keyframes valley-home-flight { from { transform: translateX(125vw); } to { transform: translateX(-10vw); } }
+@media (max-width: 720px) {
+  .valley-home-logo { top: 8svh; width: min(500px, 86vw); }
+  .valley-home-scenery .valley-home-farm { background-position: 62% bottom; background-size: auto 300px; height: 44%; }
+}
+@media (max-height: 540px) and (min-width: 721px) {
+  .valley-home-logo { top: 10px; width: min(360px, 48vw); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .valley-home-bird { display: none; }
+  .valley-home-stars, .valley-home-clouds { animation: none; }
+  .valley-home-scenery > div { transform: none; transition: none; }
+}
+
+/* Title menu and full-page character journal. */
+.valley-screen-title { background: linear-gradient(#49c9e2 0%, #7ff6d5 55%, #44b984 100%); border: 2px solid #d9ffff; border-radius: 5px; }
+.valley-screen-title .valley-home-gradient { background: linear-gradient(#49c9e2 0%, #7ff6d5 55%, #44b984 100%); }
+.valley-screen-title .valley-home-mountain { background-size: 100% 155%; }
+.valley-screen-title .valley-home-clouds-near { background-position: right -28svh; background-size: auto 170%; animation: valley-title-cloud-drift 100s linear infinite alternate; }
+@keyframes valley-title-cloud-drift { from { transform: translateX(-4vw) scaleX(-1); } to { transform: translateX(4vw) scaleX(-1); } }
+.valley-screen-title .valley-home-farm, .valley-screen-title .valley-home-tree { display: none; }
+.valley-title-toolbar { position: absolute; inset: 20px 28px auto; display: flex; justify-content: space-between; align-items: center; color: #fffbd8; text-shadow: 2px 2px #357481; }
+.valley-title-toolbar > span { display: flex; align-items: center; gap: 10px; font-size: 20px; }
+.valley-title-toolbar img { width: 34px; image-rendering: pixelated; }
+.valley-title-toolbar button { padding: 7px 12px; color: #79532c; background: #ffe2a4; border: 2px solid #b37b37; font-size: 12px; cursor: pointer; }
+.valley-title-footer { position: absolute; inset: auto 28px 30px; display: flex; justify-content: space-between; color: #fff9d9; font-size: 10px; text-shadow: 1px 1px #2e6545; }
+.valley-title-footer a { text-underline-offset: 4px; }
+.valley-title-invitation { position: absolute; bottom: calc(12svh + 138px); width: 100%; text-align: center; color: #ffffde; font-size: 12px; text-shadow: 1px 1px #386944; }
+.valley-screen-splash { cursor: pointer; outline: none; }
+.valley-title-sign { position: absolute; top: 9svh; left: 50%; transform: translateX(-50%); width: min(680px, 76vw); height: 35svh; border: 10px solid transparent; border-image: var(--valley-frame) 15 / 10px stretch; background: repeating-linear-gradient(#f6d18b 0 42px, #d9ac68 43px 45px); box-shadow: 0 8px #344c4044; }
+.valley-title-sign .valley-home-logo { position: static; width: 100%; height: 100%; transform: none; object-fit: contain; }
+.valley-title-sign::before, .valley-title-sign::after { content: '◆'; position: absolute; top: 8px; color: #a9753c; font-size: 13px; }
+.valley-title-sign::before { left: 9px; }
+.valley-title-sign::after { right: 9px; }
+.valley-title-caption { position: absolute; top: 46.5%; width: 100%; text-align: center; color: #fff8d7; text-shadow: 2px 2px #274d46; font-size: 14px; }
+.valley-title-caption > span { display: block; margin-top: 18px; font-size: 24px; color: #ffeb85; }
+.valley-title-menu { position: absolute; left: 50%; bottom: 12svh; transform: translateX(-50%); display: flex; gap: 20px; }
+.valley-title-menu button, .valley-wood-button { border: 9px solid transparent; border-image: var(--valley-frame) 15 / 9px stretch; background: #ffe0a0; color: #87502c; border-radius: 0; cursor: pointer; }
+.valley-title-menu button { width: 144px; min-height: 124px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 10px; box-shadow: 0 6px #233f3355; }
+.valley-title-menu button:hover, .valley-wood-button:hover { filter: brightness(1.08); transform: translateY(-3px); }
+.valley-title-menu strong { font-size: 24px; font-weight: 400; }
+.valley-title-menu span { font-size: 11px; }
+.valley-title-menu img { width: 32px; height: 32px; image-rendering: pixelated; }
+.valley-title-menu b { color: #729447; font-size: 28px; line-height: 32px; }
+.valley-screen-account, .valley-screen-manual { height: auto; min-height: 100svh; overflow-y: auto; padding: 44px 24px; }
+.valley-stage-content { position: relative; width: min(100%, 1050px); margin: 0 auto; padding: 32px 40px; border: 12px solid transparent; border-image: var(--valley-frame) 15 / 12px stretch; background: #ffedc2; color: #67442d; box-shadow: 0 12px #193f4655; }
+.valley-page-back, .valley-text-button { border: 0; padding: 4px 0; background: transparent; color: #825131; font: inherit; cursor: pointer; text-underline-offset: 4px; }
+.valley-page-back:hover, .valley-text-button:hover { text-decoration: underline; }
+.valley-character-heading { margin: 24px 0; }
+.valley-character-heading .portal-eyebrow, .valley-manual .portal-eyebrow, .valley-tour .portal-eyebrow { color: #7b8c45; font-size: 11px; letter-spacing: .12em; }
+.valley-character-heading h2, .valley-manual h2, .valley-tour h2 { font-size: 28px; margin: 10px 0; font-weight: 400; outline: none; }
+.valley-character-heading > p:last-child { font-size: 13px; color: #94714a; }
+.valley-character-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 36px; align-items: start; }
+.valley-character-editor { display: flex; flex-direction: column; align-items: center; padding: 20px 16px; gap: 12px; border: 3px solid #c49a60; background: #eed29a; }
+.valley-portrait { width: 100%; height: 235px; display: grid; place-items: center; border: 3px solid #a47d4e; background: linear-gradient(#91c6c3 65%, #9caf68 65%); box-shadow: inset 4px 4px #46564833; }
+.valley-portrait svg { width: 135px; height: 190px; image-rendering: pixelated; }
+.valley-character-editor > strong { max-width: 100%; overflow-wrap: anywhere; font-size: 16px; font-weight: 400; }
+.valley-character-editor > span { color: #718447; font-size: 12px; }
+.valley-character-editor small { font-size: 10px; color: #8e704c; }
+.valley-appearance-row { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+.valley-appearance-row button { padding: 5px; border: 2px solid #a67a43; background: #ffe6ae; color: #825131; cursor: pointer; }
+.valley-appearance-row i { width: 24px; height: 24px; border: 2px solid #835e39; }
+.valley-role-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.valley-role-picker button { padding: 12px 8px; display: flex; flex-direction: column; gap: 8px; border: 2px solid #c69b60; color: #885c37; background: #f7dfad; cursor: pointer; text-align: left; }
+.valley-role-picker strong { font-size: 15px; font-weight: 400; }
+.valley-role-picker small { font-size: 10px; line-height: 1.8; }
+.valley-role-picker button[aria-pressed=true] { background: #fff5d4; border-color: #74904b; box-shadow: inset 0 -4px #a4b969; color: #4f6b35; }
+.valley-role-picker button:disabled { opacity: .5; cursor: not-allowed; }
+.valley-account-tabs { display: flex; gap: 24px; margin: 24px 0 20px; border-bottom: 2px solid #d9b880; }
+.valley-account-tabs button { font: inherit; font-size: 13px; padding: 0 0 10px; border: 0; border-bottom: 3px solid transparent; color: #a0825a; background: transparent; cursor: pointer; }
+.valley-account-tabs button[aria-pressed=true] { color: #6c803f; border-bottom-color: #6c803f; }
+.valley-account-fields .auth-form { width: 100%; max-width: none; gap: 14px; margin: 22px 0 0; }
+.valley-account-fields .auth-form label { color: #795233; font-size: 12px; gap: 7px; }
+.valley-account-fields .auth-form input { min-width: 0; background: #fff9e5; border: 2px solid #c39a61; color: #614329; border-radius: 0; min-height: 42px; padding: 10px 12px; }
+.valley-account-fields .auth-form > button { min-height: 48px; justify-content: center; font-size: 14px; margin-top: 6px; }
+.valley-account-fields .privacy-check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; line-height: 1.8; }
+.valley-account-fields .privacy-check input { width: 18px; height: 18px; min-height: 18px; margin: 0; }
+.valley-account-note { color: #94744f; font-size: 11px; line-height: 1.9; }
+.valley-guest-note { padding: 22px; background: #f4dfb1; border: 2px dashed #c9a468; line-height: 2; }
+.valley-guest-note h3 { color: #668144; font-size: 17px; font-weight: 400; }
+.valley-guest-note p { font-size: 13px; }
+.valley-manual { margin-top: 5svh; max-width: 900px; }
+.valley-manual h2 { margin-top: 20px; }
+.valley-manual-lead { color: #8c6b46; font-size: 14px; }
+.valley-manual-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 28px 0; }
+.valley-manual-grid article { border: 2px solid #d2ae76; padding: 20px; background: #fff5d8; }
+.valley-manual-grid h3 { margin-bottom: 14px; font-size: 16px; color: #6f853f; font-weight: 400; }
+.valley-manual-grid p, .valley-tour > p { font-size: 13px; line-height: 2; }
+.valley-wood-button { padding: 12px 20px; margin-right: 20px; font: inherit; }
+@media (max-width: 720px) {
+  .valley-title-sign { top: 12svh; height: 32svh; width: 88vw; }
+  .valley-title-caption { top: 48%; padding: 0 16px; font-size: 11px; }
+  .valley-title-menu { bottom: 15svh; gap: 14px; }
+  .valley-title-menu button { width: 140px; min-height: 130px; padding: 10px; }
+  .valley-title-menu strong { font-size: 20px; }
+  .valley-screen-account, .valley-screen-manual { padding: 14px 10px; }
+  .valley-stage-content { padding: 20px 16px; border-width: 9px; border-image-width: 9px; }
+  .valley-character-heading h2 { font-size: 23px; }
+  .valley-character-layout { grid-template-columns: 1fr; gap: 24px; }
+  .valley-character-editor { display: grid; grid-template-columns: 100px 1fr; gap: 10px 16px; }
+  .valley-portrait { grid-row: span 5; height: 175px; }
+  .valley-portrait svg { width: 95px; height: 145px; }
+  .valley-character-editor > small { grid-column: 1 / -1; text-align: center; }
+  .valley-role-picker { gap: 5px; }
+  .valley-role-picker button { padding: 9px 6px; }
+  .valley-role-picker strong { font-size: 13px; }
+  .valley-manual-grid { grid-template-columns: 1fr; }
+}
+@media (max-height: 540px) and (min-width: 721px) {
+  .valley-title-sign { top: 4svh; height: 45svh; width: 380px; }
+  .valley-title-caption { top: 51%; }
+  .valley-title-menu { bottom: 5svh; }
+  .valley-title-menu button { min-height: 100px; width: 160px; gap: 4px; padding: 7px; }
+}

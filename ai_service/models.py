@@ -139,6 +139,22 @@ class ChunkRequest(BaseModel):
 
         return self
 
+
+class EmbeddedChunk(BaseModel):
+    """One chunk together with the vector generated from its content."""
+
+    chunk_index: int = Field(ge=0)
+    content: str = Field(min_length=1)
+    embedding: list[float] = Field(min_length=1536, max_length=1536)
+
+
+class ChunkEmbedResponse(BaseModel):
+    """Embedding profile and all generated chunks returned to Spring Boot."""
+
+    embedding_profile: str = Field(min_length=1, max_length=160)
+    chunks: list[EmbeddedChunk] = Field(default_factory=list)
+
+
 class RagSearchRequest(BaseModel):
     organization_id: str | None = None
     query: str

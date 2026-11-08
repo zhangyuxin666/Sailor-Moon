@@ -32,6 +32,39 @@ class Embeddings:
             return response.json()["data"][0]["embedding"]
         return self._local_hash_embedding(text)
 
+    def create_many(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for multiple document chunks in one operation."""
+        if not texts:
+            return []
+
+        if settings.embedding_base_url and settings.embedding_api_key:
+            response = httpx.post(
+                f"{settings.embedding_base_url.rstrip('/')}/embeddings",
+                headers={"Authorization": f"Bearer {settings.embedding_api_key}"},
+                json={
+                    "model": settings.embedding_model,
+                    "input": texts,
+                    "dimensions": settings.embedding_dimensions,
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+
+            data = sorted(
+                response.json()["data"],
+                key=lambda item: item.get("index", 0),
+            )
+            vectors = [item["embedding"] for item in data]
+
+            if len(vectors) != len(texts):
+                raise ValueError("Embedding result count does not match text count")
+            if any(len(vector) != settings.embedding_dimensions for vector in vectors):
+                raise ValueError("Embedding result has an invalid dimension")
+
+            return vectors
+
+        return [self._local_hash_embedding(text) for text in texts]
+
     def _local_hash_embedding(self, text: str) -> list[float]:
         # An offline deterministic fallback. Production should configure a real
         # embedding endpoint; keeping the dimensions stable preserves pgvector data.
