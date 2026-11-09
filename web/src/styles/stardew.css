@@ -116,7 +116,7 @@ input[type=checkbox], input[type=radio] { accent-color: #64813d; }
 .ws-button.dark { color: #fff4cf; border-color: #3d5d29; background: #6a873f; text-shadow: 1px 1px #3e5826; }
 .ws-button.danger { color: #9a3e28; border-color: #b46547; background: #f8d4ac; text-shadow: none; }
 .ws-button:disabled { opacity: .55; cursor: not-allowed; }
-.ws-tag, .ws-pill, .draft-badge, .tag-list .tag, .missing-list span {
+.ws-tag, .ws-pill, .tag-list .tag {
   border-radius: 2px; font-size: 12px; border-color: #cca166;
 }
 .ws-list-item, .task-item, .step-item, .reg-row, .delivery-row, .workflow-item, .reminder-card {
@@ -151,6 +151,7 @@ dialog::backdrop { background: #132c3a88; backdrop-filter: blur(2px); }
 .agent-hero p { color: #76532e; }
 .agent-compose { border-radius: 0; background: #f9e8bd; border-color: #b88747; }
 .agent-compose textarea { color: #5c3a21; background: #fff2ce; }
+.agent-compose textarea::placeholder { color: #795a3a; }
 .agent-compose-footer { background: #e8c48c; border-color: #b58750; }
 .agent-compose-footer .ws-select { color: #694329; background: #fff0ca; border-color: #b9884f; }
 .agent-compose-footer .ws-button { color: #fff5cf; border-color: #485f28; background: #718c42; }
@@ -190,8 +191,6 @@ dialog::backdrop { background: #132c3a88; backdrop-filter: blur(2px); }
 .ws-user strong { color: #ffedbc; font-size: 12px; }
 .ws-user small { color: #e8c88d; font-size: 12px; }
 .ws-avatar { color: #634022; border: 2px solid #5d3d24; border-radius: 0; background: #f1d49c; }
-.ws-cluster-node { color: #f1d29a; font-size: 10px; }
-.ws-cluster-node strong { color: #ffebba; }
 .ws-main { grid-column: 2; width: calc(100% - 64px); max-width: 1250px; margin: 0 auto; padding-top: 25px; }
 .ws-main button:not(.ws-button):not(.dialog-close):not(.task-toggle) {
   border: 2px solid #b2834b; border-radius: 2px; padding: 6px 9px;
@@ -220,7 +219,7 @@ input::file-selector-button { border: 2px solid #af7a42; color: #6d4328; backgro
   .ws-nav a { min-width: 39px; min-height: 38px; padding: 6px 7px; flex: 0 0 auto; font-size: 0; }
   .ws-nav a span { width: 20px; }
   .ws-user { padding: 0; margin: 0 0 0 auto; border: 0; }
-  .ws-cluster-node, .valley-sidebar-farm { display: none; }
+  .valley-sidebar-farm { display: none; }
   .ws-main { width: calc(100% - 32px); padding-top: 18px; }
   .valley-workspace-bar { margin-bottom: 22px; }
 }

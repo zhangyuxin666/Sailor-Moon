@@ -93,7 +93,7 @@ class AgentDraftServiceTest {
         Harness h = harness("{}");
         when(h.ai.analyzeWorkRequest(anyString(), anyString(), eq("org1"))).thenReturn(mapper.readTree("""
                 {"intent_type":"activity","complexity":"complex","title":"Reviewed title","description":"Reviewed description",
-                 "event_time":"2026-10-25T19:00:00","workflow":{"create_form":true,"assign_tasks":true}}
+                 "event_time":"2026-10-25T19:00:00","workflow":{"create_form":true,"assign_tasks":true,"create_plan":true}}
                 """));
         when(h.ai.plan(eq("Organize trip"), any(), eq("org1"))).thenReturn(mapper.readTree("""
                 {"title":"Generated","form_fields":[{"name":"preference","label":"Preference","type":"text"}],
@@ -108,6 +108,34 @@ class AgentDraftServiceTest {
         assertThat(draft.path("execution_plan").path("title").asText()).isEqualTo("Reviewed title");
         assertThat(draft.path("form_fields")).hasSize(3);
         verify(h.ai).plan(eq("Organize trip"), any(), eq("org1"));
+    }
+
+    @Test
+    void plainActivitySkipsOptionalPlanning() throws Exception {
+        Harness h = harness("{}");
+        when(h.ai.analyzeWorkRequest(anyString(), anyString(), eq("org1"))).thenReturn(mapper.readTree("""
+                {"intent_type":"activity","complexity":"simple","title":"Class meeting",
+                 "event_time":"2026-10-25T19:00:00","workflow":{"publish_message":false}}
+                """));
+
+        JsonNode draft = (JsonNode) h.service.create(account, "c1", "Class meeting").get("draft");
+
+        assertThat(draft.path("execution_plan").path("tasks")).isEmpty();
+        assertThat(draft.path("execution_plan").path("materials")).isEmpty();
+        verify(h.ai, org.mockito.Mockito.never()).plan(anyString(), any(), anyString());
+    }
+
+    @Test
+    void disablingDivisionOmitsPreviouslyGeneratedTasksFromPublishedPlan() throws Exception {
+        Harness h = harness("""
+                {"intent_type":"activity","title":"Class meeting","event_time":"2026-10-25T19:00:00",
+                 "workflow":{"assign_tasks":false},"execution_plan":{"tasks":[{"title":"Prepare","account_id":"u1"}]}}
+                """);
+
+        h.service.publish(account, "d1");
+
+        assertThat(h.db.publishedPlan.path("tasks")).isEmpty();
+        assertThat(h.db.publishedPlan.path("tool_intents").toString()).doesNotContain("assign_tasks");
     }
 
     @Test

@@ -237,23 +237,6 @@ dialog::backdrop {
 .ws-user strong { font-size: 11px; }
 .ws-user small { margin-top: 3px; color: var(--muted); font-size: 9px; }
 
-.ws-cluster-node {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 9px 10px 2px;
-  color: var(--muted-2);
-  font-family: var(--font-mono);
-  font-size: 8px;
-}
-
-.ws-cluster-node strong {
-  color: var(--muted);
-  font-size: 8px;
-  font-weight: 700;
-}
-
 .ws-main {
   grid-column: 2;
   width: min(1240px, calc(100% - 72px));
@@ -739,10 +722,26 @@ dialog::backdrop {
 .example-chips button { padding: 7px 10px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 999px; color: rgba(255, 255, 255, .85); background: transparent; cursor: pointer; font-size: 9px; }
 .example-chips button:hover { color: #fff; border-color: #fff; }
 
-.draft-layout { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(260px, .55fr); gap: 12px; }
-.draft-badges { display: flex; flex-wrap: wrap; gap: 6px; }
-.draft-badge { padding: 5px 8px; border-radius: 999px; color: var(--blue); background: var(--blue-soft); font-size: 8px; font-weight: 750; }
-.draft-badge.complex { color: var(--red); background: var(--red-soft); }
+.agent-request, .agent-review, .agent-tutorial, #agent-history { max-width: 900px; }
+.agent-tutorial, #agent-history { margin-bottom: 16px; }
+.agent-request { padding: clamp(18px, 3vw, 32px); }
+.agent-request h2 { font-size: clamp(22px, 3vw, 30px); letter-spacing: 0; }
+.agent-request .agent-compose { margin-top: 16px; }
+.agent-request textarea { min-height: 112px; }
+.example-chips { align-items: center; }
+.example-chips > span { font-size: 12px; margin-right: 4px; }
+.agent-tutorial ol { list-style: none; margin: 12px 0 0; padding: 0; }
+.agent-tutorial li { display: grid; grid-template-columns: minmax(185px, 1fr) 2fr; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.agent-tutorial li p, .agent-result-note { margin: 0; line-height: 1.65; }
+.agent-tutorial li button { display: block; margin-top: 8px; }
+.agent-details { padding: 12px; border: 1px solid var(--line); }
+.agent-details summary { cursor: pointer; font-weight: 700; }
+.agent-details summary span { display: inline-block; margin-left: 10px; font-size: 12px; font-weight: 400; }
+.agent-details[open] > summary { margin-bottom: 10px; }
+.agent-questions { display: grid; gap: 12px; }
+.agent-review .agent-option { display: flex; justify-content: flex-start; }
+.agent-review .agent-option input { width: 17px; min-height: 17px; flex: none; }
+.agent-review .agent-option small { display: block; margin-top: 4px; font-weight: 400; }
 
 .reason-box {
   padding: 14px;
@@ -754,8 +753,6 @@ dialog::backdrop {
   line-height: 1.75;
 }
 
-.missing-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.missing-list span { padding: 6px 9px; border-radius: 999px; color: var(--amber); background: var(--amber-soft); font-size: 9px; }
 .workflow-list { display: grid; gap: 7px; }
 .workflow-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); font-size: 10px; font-weight: 700; }
 .workflow-item input { width: 17px; height: 17px; accent-color: var(--primary); }
@@ -1050,7 +1047,7 @@ dialog::backdrop {
   .ws-header h1 { font-size: 37px; }
   .ws-actions { width: 100%; }
   .ws-actions .ws-button { flex: 1; }
-  .ws-metrics, .ws-grid, .draft-layout, .ws-form-row { grid-template-columns: 1fr; }
+  .ws-metrics, .ws-grid, .ws-form-row, .agent-tutorial li { grid-template-columns: 1fr; }
   .ws-metric { min-height: 112px; }
   .ws-panel { padding: 19px; }
   .ws-panel-title { flex-direction: column; }

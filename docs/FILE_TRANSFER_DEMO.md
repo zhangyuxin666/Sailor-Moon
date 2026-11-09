@@ -1,8 +1,8 @@
 # 文件上传下载：验收与录屏讲解
 
-打开 `/file-center`。本次补齐了实际续传数据、刷新恢复、磁盘分块校验、有限重试、整文件校验，以及并发下载资源控制。录屏由真实浏览器操作生成，前半部分为界面演示，后半部分为生产源码讲解；附加音轨为 Windows 本地中文合成语音，可替换为本组成员真人讲解。班级、组号尚未提供，视频文件名中的占位文字须在提交前修改为实际“班级＋组号”。
+独立文件中心已移除。本文保留原课堂演示步骤和验证证据作为历史记录。当前版本可按「可复现验证」一节检查文件传输 API。
 
-## 五项要求与实现位置
+## 原演示的五项要求与实现位置
 
 | 要求 | 实现与讲解重点 |
 | --- | --- |
@@ -12,7 +12,7 @@
 | 进度条 | XHR上传进度按 `loaded/total` 计算；大文件为“已确认字节+在途字节”；下载为“已缓存字节+正在接收字节”。发送到100%仍要等待合并/校验；只有业务确认完成后显示成功。重试不会重复累计 |
 | 高并发下载 | 客户端至多4条Range连接；服务端请求各用独立FileChannel，不把整文件读进内存。Java21虚拟线程、Nginx连接池/轮询，以及每节点默认128个下载许可共同控制资源。超过许可返回429和Retry-After。多个节点必须共用数据库和上传目录 |
 
-## 实际操作顺序
+## 原演示操作顺序
 
 1. 选择一个约12MiB的测试文件，勾选“故意损坏一个分片”；观察日志出现 `CHUNK_CHECKSUM_MISMATCH`，自动重传该片。
 2. 上传一部分后点击暂停，记录已确认字节，刷新页面。重新选择同一原文件，观察“恢复服务端已确认”的日志及只上传缺片；更换内容的文件会被SHA-256检查拦下。
@@ -35,10 +35,10 @@ npm ci --prefix web
 npm test --prefix web
 npm run build --prefix web
 mvn -B -ntp verify
-python scripts/verify_file_transfers.py --java "C:/Program Files/Java/jdk-21/bin/java.exe" --war "<构建目录>/target/activity-assistant-2.0.0.war" --output "D:/tmp/sailor-files-proof" --record --name "班级组号"
+python scripts/verify_file_transfers.py --java "C:/Program Files/Java/jdk-21/bin/java.exe" --war "<构建目录>/target/activity-assistant-2.0.0.war" --output "D:/tmp/sailor-files-proof"
 ```
 
-浏览器验收额外使用 Python `httpx/playwright`、本机Chrome、Playwright FFmpeg以及Docker中的 `pgvector/pgvector:pg16`。脚本仅创建带随机名称的测试容器，使用18543/18403端口和输出目录内的测试文件；端口占用时直接停止，不连接现有业务数据库。退出时只结束自己启动的进程树和测试容器。运行 `scripts/narrate_file_demo.py --video <录屏.webm> --browser-mux` 可用本机Chrome添加中文合成音轨，无需完整FFmpeg；也可用 `--ffmpeg <完整ffmpeg.exe>` 导出带讲解的MP4。
+API 验收使用 Python `httpx` 和 Docker 中的 `pgvector/pgvector:pg16`。脚本仅创建带随机名称的测试容器，使用18543/18403端口和输出目录内的测试文件；端口占用时直接停止，不连接现有业务数据库。退出时只结束自己启动的进程树和测试容器。
 
 本机中文路径下Maven重新打包出现文件重命名失败；完整验收在纯英文路径的隔离副本中完成，副本代码与工作区一致。遇到相同问题时可把工程复制到英文目录再构建，切勿把数据库或.env上传到仓库。
 

@@ -210,10 +210,16 @@ public class ClassroomService {
 
     @Transactional
     public Map<String, Object> createTodo(AccountPrincipal account, String classId, ApiModels.TodoCreateRequest body) {
+        return createTodo(account, classId, body, true);
+    }
+
+    @Transactional
+    public Map<String, Object> createTodo(AccountPrincipal account, String classId, ApiModels.TodoCreateRequest body,
+                                          boolean publishToQq) {
         requireManager(account);
         String deadline = normalizeTime(body.deadline(), "截止时间格式无效");
         Map<String, Object> classroom = requireClassManager(classId, account);
-        String classGroup = validatedClassGroup(classroom);
+        String classGroup = publishToQq ? validatedClassGroup(classroom) : null;
         String id = Ids.shortId();
         String now = LocalDateTime.now().toString();
         String kind = body.kind() == null || body.kind().isBlank() ? "homework" : body.kind();

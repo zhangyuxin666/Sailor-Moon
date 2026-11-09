@@ -121,7 +121,7 @@ RAG 查询携带 `organization_id`，只返回本组织和全局文档。FastAPI
 - `POST /knowledge/documents`：仅管理者；Spring 调用 AI 嵌入接口并写入 pgvector，相同组织、来源和内容重复提交返回 `idempotent=true`。
 - `POST /knowledge/search`：登录用户；Spring 注入当前组织 ID 后调用内部 RAG 检索。
 
-## 文件中心
+## 文件传输 API
 
 所有接口要求登录会话，只能操作自己上传的文件（管理者可下载/删除他人的文件）。
 
@@ -136,7 +136,7 @@ RAG 查询携带 `organization_id`，只返回本组织和全局文档。FastAPI
 批量与列表：
 
 - `POST /files/batch`：`multipart/form-data`，字段名 `files`，一次多个小文件，返回每个文件的结果 `{filename, ok, file_id?, error?}`。
-- `GET /files/mine`：我的文件列表（`/files` 本身是前端页面路由）。
+- `GET /files/mine`：我的文件列表。
 - `DELETE /files/{file_id}`：删除文件与磁盘对象。
 
 下载：

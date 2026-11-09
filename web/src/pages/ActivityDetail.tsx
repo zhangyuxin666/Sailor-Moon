@@ -224,30 +224,30 @@ export default function ActivityDetail() {
         <ActivityManagement id={id} detail={detail} stats={stats} onChanged={() => load(true)} />
         <section className="ws-panel wide">
           <div className="ws-panel-title"><div><h2>活动策划</h2><p>活动时间 {formatDate(plan.event_time)}</p></div>
-            <a className="ws-button light" href={`/activities/${id}/calendar.ics`}>下载日历</a>
+            {steps.some((step) => step.step === 'create_calendar_event' && step.status === 'done')
+              && <a className="ws-button light" href={`/activities/${id}/calendar.ics`}>下载日历</a>}
           </div>
           <p className="plan-description">{plan.description || '暂无活动说明'}</p>
-          <h3 className="panel-sub">物料清单</h3>
-          {materials.length ? <div className="tag-list">{materials.map((material, index) => <span key={index} className="tag">{material}</span>)}</div> : <div className="ws-empty">暂无物料</div>}
+          {materials.length > 0 && <><h3 className="panel-sub">物料清单</h3>
+            <div className="tag-list">{materials.map((material, index) => <span key={index} className="tag">{material}</span>)}</div></>}
         </section>
 
-        <section className="ws-panel">
+        {tasks.length > 0 && <section className="ws-panel">
           <div className="ws-panel-title"><div><h2>任务分工</h2><p>标记完成或催办 · {doneCount}/{tasks.length}</p></div></div>
-          {tasks.length ? <div className="task-list">{tasks.map((task) => (
+          <div className="task-list">{tasks.map((task) => (
             <div key={task.id} className={`task-item ${task.status === 'done' ? 'done' : ''}`}>
               <input className="task-toggle" type="checkbox" aria-label={`完成任务：${task.title}`}
                 checked={task.status === 'done'} disabled={pendingTaskId === task.id || activity.status === 'cancelled'} onChange={() => toggleTask(task)} />
               <span><strong>{task.title}</strong><small>负责人 {task.assignee}</small></span>
               <button className="task-nudge" type="button" disabled={nudgingTaskId === task.id || activity.status === 'cancelled'} onClick={() => nudgeTask(task)}>催一下</button>
             </div>
-          ))}</div> : <div className="ws-empty">暂无任务</div>}
-        </section>
+          ))}</div>
+        </section>}
 
-        <section className="ws-panel">
+        {forms.length > 0 && <section className="ws-panel">
           <div className="ws-panel-title"><div><h2>报名管理</h2><p>公开链接无需登录即可填写 · {stats ? `${stats.count} 人已报名` : '尚未取得统计'}</p></div>
             <button className="ws-button light" type="button" disabled={refreshingStats || statsLoading || !forms.length} onClick={refreshStats}>刷新报名数据</button>
           </div>
-          {!forms.length ? <div className="ws-empty">还没有报名问卷</div> : <>
             <button className="ws-button light" type="button" onClick={() => copyFormLink(forms[0].id)}>复制报名链接</button>
             <DataState loading={statsLoading && !stats} error={statsError || null} loadingText="正在读取报名回答…" onRetry={refreshStats} />
             {stats && stats.registrations.length > 0 && <div className="reg-list">{stats.registrations.map((registration, index) => (
@@ -261,8 +261,7 @@ export default function ActivityDetail() {
               </article>
             ))}</div>}
             {stats && !stats.registrations.length && !statsError && <div className="ws-empty">还没有人报名</div>}
-          </>}
-        </section>
+        </section>}
 
         <section className="ws-panel">
           <div className="ws-panel-title"><div><h2>自动执行记录</h2><p>显示每一步的真实状态、尝试次数和结果</p></div></div>
@@ -279,21 +278,21 @@ export default function ActivityDetail() {
           })}</div> : <div className="ws-empty">暂无执行记录</div>}
         </section>
 
-        <section className="ws-panel">
+        {reminders.length > 0 && <section className="ws-panel">
           <div className="ws-panel-title"><div><h2>定时提醒</h2><p>失败可重试；未知结果须先核对，已发送记录不能撤回。</p></div></div>
-          {reminders.length ? <div className="ws-list">{reminders.map(item=><div className="reminder-card" key={item.id}><strong>{formatDate(item.remind_at)} · {({scheduled:'已安排',sent:'已发送',cancelled:'已取消',failed:'失败',unknown:'待核对'} as Record<string,string>)[item.status]||item.status}</strong><span>{item.message}</span>
+          <div className="ws-list">{reminders.map(item=><div className="reminder-card" key={item.id}><strong>{formatDate(item.remind_at)} · {({scheduled:'已安排',sent:'已发送',cancelled:'已取消',failed:'失败',unknown:'待核对'} as Record<string,string>)[item.status]||item.status}</strong><span>{item.message}</span>
             {item.error&&<p role="alert">{item.error}</p>}
             {item.status==='scheduled'&&<button className="ws-button danger" type="button" disabled={cancelling} onClick={()=>cancelReminder(item.id)}>取消提醒</button>}
             {item.status==='failed'&&activity.status!=='cancelled'&&<button className="ws-button light" type="button" disabled={cancelling} onClick={()=>retryReminder(item.id)}>重试提醒</button>}
-          </div>)}</div> : <div className="ws-empty">没有提醒任务</div>}
-        </section>
+          </div>)}</div>
+        </section>}
 
-        <section className="ws-panel wide">
+        {(detail.qq_group_attached || deliveries.length > 0) && <section className="ws-panel wide">
           <div className="ws-panel-title"><div><h2>QQ 群消息</h2><p>{deliveries.length ? `${sentCount} 条成功${failedCount ? ` · ${failedCount} 条失败` : ''}` : '还没有投递'}</p></div></div>
-          <form className="ws-form" onSubmit={sendMessage}>
+          {detail.qq_group_attached && <form className="ws-form" onSubmit={sendMessage}>
             <label>通知内容<textarea rows={3} placeholder="输入要发到活动群的通知" value={messageContent} disabled={sending || activity.status === 'cancelled'} onChange={(event) => setMessageContent(event.target.value)} /></label>
             <div className="publish-bar"><button className="ws-button" type="submit" disabled={sending || activity.status === 'cancelled'}>{sending ? '发送中…' : '发送到 QQ 群'}</button></div>
-          </form>
+          </form>}
           {deliveries.length ? <div className="delivery-list">{deliveries.map((item, index) => (
             <div key={index} className="delivery-row"><span className="delivery-kind">{DELIVERY_KIND_LABELS[item.kind] || item.kind}</span>
               <span className="delivery-content">{item.content}</span>
@@ -301,7 +300,7 @@ export default function ActivityDetail() {
               {(item.status==='unknown'||item.status==='sending')&&<button className="ws-button light" type="button" disabled={!!checkingDelivery} onClick={()=>checkDelivery(item.id)}>核对投递结果</button>}
             </div>
           ))}</div> : <div className="ws-empty">还没有 QQ 投递记录</div>}
-        </section>
+        </section>}
 
         <ParticipationManagement key={id} activityId={id} status={activity.status} onChanged={()=>load(true)}/>
         <RecapPanel key={id} id={id} status={activity.status} version={activity.version} onChanged={()=>load(true)}/>

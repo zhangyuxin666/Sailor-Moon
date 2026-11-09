@@ -55,11 +55,18 @@ public class AgentDraftService {
         JsonNode analyzed = ai.analyzeWorkRequest(rawInput, context, organizationId);
         ConfirmedPlans.validateDraft(analyzed);
         ObjectNode draft = analyzed.deepCopy();
-        if ("activity".equals(draft.path("intent_type").asText())) {
+        JsonNode workflow = draft.path("workflow");
+        if ("activity".equals(draft.path("intent_type").asText())
+                && (workflow.path("assign_tasks").asBoolean(false)
+                    || workflow.path("create_plan").asBoolean(false)
+                    || workflow.path("schedule_reminder").asBoolean(false))) {
             // Planning occurs before review; publishing never silently regenerates this snapshot.
-            JsonNode generated = ai.plan(rawInput, members, organizationId);
-            draft.set("execution_plan", generated.deepCopy());
-            if (!draft.path("form_fields").isArray() || draft.path("form_fields").isEmpty())
+            ObjectNode generated = ai.plan(rawInput, members, organizationId).deepCopy();
+            if (!workflow.path("assign_tasks").asBoolean(false)) generated.remove("tasks");
+            if (!workflow.path("create_plan").asBoolean(false)) generated.remove("materials");
+            draft.set("execution_plan", generated);
+            if (workflow.path("create_form").asBoolean(false)
+                    && (!draft.path("form_fields").isArray() || draft.path("form_fields").isEmpty()))
                 draft.set("form_fields", generated.path("form_fields").deepCopy());
         }
         if ("activity".equals(draft.path("intent_type").asText())
@@ -177,7 +184,7 @@ public class AgentDraftService {
             if (draft.path("deadline").asText().isBlank()) throw ApiException.badRequest("发布作业前必须确认截止时间");
             Map<String, Object> todo = classroom.createTodo(account, classId, new ApiModels.TodoCreateRequest(
                     draft.path("title").asText(), draft.path("description").asText(draft.path("summary").asText()),
-                    draft.path("deadline").asText(), "homework"));
+                    draft.path("deadline").asText(), "homework"), draft.path("workflow").path("publish_message").asBoolean(true));
             return new PublishOutcome("todo", String.valueOf(todo.get("id")), null, "queued", List.of());
         }
         if ("activity".equals(intent) || "survey".equals(intent)) {
@@ -185,6 +192,7 @@ public class AgentDraftService {
                     && !draft.path("execution_plan").isObject())
                 throw ApiException.badRequest("旧草案缺少已确认的任务方案，请重新生成后确认");
             ObjectNode confirmed = ConfirmedPlans.fromDraft(draft, mapper);
+            if (!draft.path("workflow").path("assign_tasks").asBoolean(false)) confirmed.putArray("tasks");
             validateAssignees(classId, confirmed);
             String text = activityText(draft);
             Map<String, Object> queued = activities.queue(account, text, draft.path("workflow").path("publish_message").asBoolean(true),
@@ -205,6 +213,8 @@ public class AgentDraftService {
             }
             return new PublishOutcome("activity", activityId, runId, runStatus, missing);
         }
+        if (!draft.path("workflow").path("publish_message").asBoolean(true))
+            throw ApiException.badRequest("此通知草案已关闭群消息。仅站内发布请使用作业与待办或活动草案。");
         Map<String, Object> classInfo = classroom.requireClassManager(classId, account);
         if (classInfo.get("qq_group_openid") == null) throw ApiException.badRequest("班级尚未绑定 QQ 群，无法发布通知");
         String group = String.valueOf(classInfo.get("qq_group_openid"));

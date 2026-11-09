@@ -19,7 +19,6 @@
 - `nginx/nginx.conf`：`upstream`、轮询、超时和故障转移配置。
 - `Dockerfile`：构建 React、Spring Boot WAR，并部署到外部 Tomcat。
 - `src/main/java/.../api/ClusterController.java`：返回当前实例标识。
-- `web/src/components/Layout.tsx`：在工作台侧边栏显示当前节点。
 - `scripts/run.ps1`：默认启动集群，`-Single` 启动单实例。
 
 ## 启动
@@ -71,7 +70,7 @@ docker compose -f compose.cluster.yml ps
 } | Group-Object instance | Select-Object Name, Count
 ```
 
-预期两个节点各约一半请求。登录活动管家后，工作台左下角也会显示当前节点。
+预期两个节点各约一半请求。
 
 验证故障转移：
 

@@ -262,9 +262,10 @@ public class ActivityOrchestrator {
             reminderId = Ids.shortId();
             List<String> materials = new ArrayList<>();
             flow.plan().path("materials").forEach(node -> materials.add(node.asText()));
+            String message = "活动「" + flow.title() + "」将于 " + eventTime + " 开始。";
+            if (!materials.isEmpty()) message += "请准备物料：" + String.join("、", materials) + "。";
             db.update("INSERT INTO reminders (id, activity_id, message, remind_at, status, created_at) VALUES (?, ?, ?, ?, 'scheduled', ?)",
-                    reminderId, flow.activityId(), "活动「" + flow.title() + "」将于 " + eventTime + " 开始，物料："
-                            + String.join("、", materials) + "，请各负责人就位！", time, LocalDateTime.now().toString());
+                    reminderId, flow.activityId(), message, time, LocalDateTime.now().toString());
         } else {
             reminderId = String.valueOf(old.get("id"));
         }

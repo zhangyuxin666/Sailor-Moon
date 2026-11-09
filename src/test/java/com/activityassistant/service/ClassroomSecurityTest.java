@@ -198,6 +198,20 @@ class ClassroomSecurityTest {
         verify(qq, never()).sendGroup(anyString(), anyString(), anyString());
     }
 
+    @Test
+    void siteOnlyTodoDoesNotReadOrSendToTheBoundGroup() {
+        classroom.put("qq_group_openid", "bound-group");
+        when(db.list("SELECT account_id FROM class_members WHERE class_id=?", "class-id"))
+                .thenReturn(List.of(Map.of("account_id", "student-id")));
+
+        var result = service.createTodo(manager, "class-id",
+                new ApiModels.TodoCreateRequest("Homework", "", "2026-11-13T12:00:00", "homework"), false);
+
+        assertThat(result).containsEntry("assigned_count", 1);
+        verify(db).update(startsWith("INSERT INTO todo_assignees"), eq(result.get("id")), eq("student-id"), anyString());
+        verifyNoInteractions(qq);
+    }
+
     private void existing(String username, String role, String status) {
         when(db.one("SELECT * FROM accounts WHERE username=? FOR UPDATE", username))
                 .thenReturn(Optional.of(Map.of("id", "participant-id", "username", username,

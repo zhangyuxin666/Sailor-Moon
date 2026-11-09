@@ -4,6 +4,8 @@ from ai_service.models import AssigneeCandidate
 from ai_service.config import settings
 from ai_service.main import app
 from ai_service.rag import RagStore, Embeddings
+from ai_service import llm
+from datetime import datetime
 import json
 
 
@@ -27,6 +29,48 @@ def test_model_failure_has_safe_reason_and_no_invented_date(monkeypatch):
     assert result.generation.fallback_reason=="model_unavailable"
     assert result.event_time==""
     assert "fake-secret" not in result.generation.model_dump_json()
+
+
+def test_relative_activity_range_is_storable_in_model_and_offline_modes(monkeypatch):
+    class FixedTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 9, 14, 0, tzinfo=tz)
+
+    monkeypatch.setattr(llm, "datetime", FixedTime)
+    engine = AiEngine()
+    text = "我要在本周五10：00–11：00举办班会，帮我提醒大家"
+    expected = "2026-11-13T10:00:00+08:00"
+    offline = engine.analyze(text, "")
+    assert offline.event_time == expected and offline.generation.pending_fields == []
+    assert engine.plan(text, []).event_time == expected
+    assert engine.analyze("本周五10:00报名，下周五举办班会", "").event_time == ""
+
+    monkeypatch.setattr(settings, "llm_api_key", "local-fixture")
+
+    def chat(self, system, user):
+        assert "2026-11-09T14:00:00+08:00" in user
+        if "事务规划" in system:
+            return json.dumps({
+                "title": "班会", "intent_type": "activity", "complexity": "standard",
+                "summary": "举行班会", "workflow": {}, "event_time": "本周五10:00–11:00",
+            })
+        return json.dumps({
+            "title": "班会", "event_time": "2026-11-13T10:00:00+08:00/2026-11-13T11:00:00+08:00",
+            "tasks": [{"title": "准备", "deadline": "2026-11-12 19:00"},
+                      {"title": "提醒", "deadline": "2026-11-13"}],
+        })
+
+    monkeypatch.setattr(AiEngine, "_chat", chat)
+    assert engine.analyze(text, "").event_time == expected
+    plan = engine.plan(text + "，需要分工", [])
+    assert plan.generation.mode == "model" and plan.event_time == expected
+    assert [task.deadline for task in plan.tasks] == ["2026-11-12T19:00:00", ""]
+
+    next_week = "下周五下午两点举办班会"
+    expected_next_week = "2026-11-20T14:00:00+08:00"
+    assert engine.analyze(next_week, "").event_time == expected_next_week
+    assert engine.plan(next_week, []).event_time == expected_next_week
 
 
 def test_model_cannot_forge_source_or_generation_metadata(monkeypatch):

@@ -1,12 +1,9 @@
 /**
  * 工作台布局组件
  * 对应旧 frontend 中各页面共用的侧边栏壳（ws-shell / ws-sidebar / ws-nav）。
- * 6 项导航：总览 / AI助手(管理) / 作业与待办 / 活动管理(管理) / 成员管理(管理) / 设置
- * 非管理者隐藏 AI助手、活动管理、成员管理。
  */
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { passwordChangeRequired } from '../lib/auth-policy';
 import ValleyIcon from './ValleyIcon';
@@ -15,7 +12,6 @@ const navItems = [
   { to: '/portal', label: '总览', icon: '◈', managerOnly: false },
   { to: '/agent', label: 'AI助手', icon: '✦', managerOnly: true },
   { to: '/assignments', label: '作业与待办', icon: '☰', managerOnly: false },
-  { to: '/file-center', label: '文件中心', icon: '⤒', managerOnly: false },
   { to: '/activity', label: '活动管理', icon: '▣', managerOnly: true },
   { to: '/members', label: '成员管理', icon: '◉', managerOnly: true },
   { to: '/knowledge', label: '知识库', icon: '▤', managerOnly: true },
@@ -29,28 +25,12 @@ export default function Layout() {
   const navigate = useNavigate();
   const isManager = account?.role === 'manager';
   const mustChangePassword = passwordChangeRequired(account);
-  const [clusterNode, setClusterNode] = useState<{ instance: string; port: number } | null>(null);
   const [clock, setClock] = useState(() => new Date());
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    let active = true;
-    if (mustChangePassword) return;
-    api<{ instance: string; port: number }>('/cluster/node')
-      .then((node) => {
-        if (active) setClusterNode(node);
-      })
-      .catch(() => {
-        if (active) setClusterNode(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [mustChangePassword]);
 
   const handleLogout = async () => {
     await logout();
@@ -101,10 +81,6 @@ export default function Layout() {
             退出
           </button>
         </div>
-        {!mustChangePassword && <div className="ws-cluster-node" title="当前处理本次请求的 Tomcat 节点">
-          当前节点
-          <strong>{clusterNode ? `${clusterNode.instance} : ${clusterNode.port}` : '未连接'}</strong>
-        </div>}
       </aside>
 
       {/* 主内容区 */}

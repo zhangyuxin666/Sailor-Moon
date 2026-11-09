@@ -23,6 +23,7 @@ export interface ClassInfo {
   id: string;
   name: string;
   member_count?: number;
+  qq_group_openid?: string | null;
 }
 
 /** 待办/作业摘要（出现在 /portal/dashboard 的 todos 列表中） */
@@ -78,6 +79,8 @@ export interface DraftDetail {
 /** Agent 草案列表项 */
 export interface DraftItem {
   id: string;
+  raw_input?: string;
+  class_id?: string;
   title: string;
   summary: string;
   class_name: string;
@@ -263,6 +266,7 @@ export interface ActivityDelivery {
 /** 活动详情 */
 export interface ActivityDetail {
   run_id?: string | null;
+  qq_group_attached?: boolean;
   activity: {
     id: string;
     title?: string;

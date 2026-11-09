@@ -117,6 +117,7 @@ public class ActivityService {
         result.put("reminders", db.list("SELECT * FROM reminders WHERE activity_id=?", activityId));
         result.put("steps", db.readList("SELECT * FROM steps WHERE activity_id=? ORDER BY id", activityId)
                 .stream().map(this::publicStep).toList());
+        result.put("qq_group_attached", db.one("SELECT 1 FROM activity_channels WHERE activity_id=?", activityId).isPresent());
         result.put("deliveries", db.readList("SELECT * FROM delivery_events WHERE activity_id=? ORDER BY created_at DESC", activityId)
                 .stream().map(this::publicDelivery).toList());
         return result;

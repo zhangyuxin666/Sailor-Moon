@@ -19,7 +19,7 @@ def members():
 
 def test_offline_tasks_distinguish_duplicate_names_by_account_id(monkeypatch):
     monkeypatch.setattr(settings, "llm_api_key", "")
-    plan = AiEngine().plan("班级活动", members())
+    plan = AiEngine().plan("班级活动，需要分工", members())
     assert {task.account_id for task in plan.tasks} == {"a1", "a2"}
     assert {task.assignee for task in plan.tasks} == {"同名"}
 
@@ -29,7 +29,7 @@ def test_remote_result_uses_canonical_name_for_selected_id(monkeypatch):
     monkeypatch.setattr(AiEngine, "_chat", lambda *args: json.dumps({
         "title": "活动", "tasks": [{"title": "准备", "account_id": "a2", "assignee": "模型乱写"}],
     }))
-    plan = AiEngine().plan("活动", members())
+    plan = AiEngine().plan("活动，需要分工", members())
     assert len(plan.tasks) == 1
     assert plan.tasks[0].account_id == "a2"
     assert plan.tasks[0].assignee == "同名"
@@ -41,7 +41,7 @@ def test_invalid_remote_identity_is_preserved_pending_without_assigning_by_name(
     monkeypatch.setattr(AiEngine, "_chat", lambda *args: json.dumps({
         "title": "活动", "tasks": [{"title": "准备", **identity}],
     }))
-    plan = AiEngine().plan("活动", members())
+    plan = AiEngine().plan("活动，需要分工", members())
     assert plan.tasks
     assert len(plan.tasks) == 1
     assert plan.tasks[0].title == "准备"
@@ -61,15 +61,15 @@ def test_plan_endpoint_keeps_account_ids_and_server_organization(monkeypatch):
                         lambda org, query: (seen.append((org, query)) or "", {"retrieval_status":"empty","sources":[]}))
     response = TestClient(app).post("/internal/ai/plan",
         headers={"X-Internal-Token": settings.ai_internal_token},
-        json={"raw_input": "活动", "organization_id": "org-a",
+        json={"raw_input": "活动，需要分工", "organization_id": "org-a",
               "available_assignees": [member.model_dump() for member in members()]})
     assert response.status_code == 200
-    assert seen == [("org-a", "活动")]
+    assert seen == [("org-a", "活动，需要分工")]
     assert {task["account_id"] for task in response.json()["tasks"]} == {"a1", "a2"}
 
 
 def test_offline_tasks_without_members_are_kept_for_manual_assignment(monkeypatch):
     monkeypatch.setattr(settings, "llm_api_key", "")
-    plan = AiEngine().plan("组织活动", [])
+    plan = AiEngine().plan("组织活动，需要分工", [])
     assert len(plan.tasks) == 4
     assert all(task.account_id == "" and task.assignee == "待分配" for task in plan.tasks)
