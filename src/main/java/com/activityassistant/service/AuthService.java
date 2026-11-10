@@ -176,7 +176,7 @@ public class AuthService {
                 .map(row -> String.valueOf(row.get("organization_id"))).orElse(null);
     }
 
-    private String sha256(String value) {
+    static String sha256(String value) {
         try {
             return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception exception) {

@@ -9,6 +9,7 @@ import { useAuth } from '../lib/auth';
 import { passwordChangeRequired } from '../lib/auth-policy';
 import { useToast } from '../components/Toast';
 import DataState from '../components/DataState';
+import LoginMethodSettings from '../components/LoginMethodSettings';
 import { formatDate } from '../lib/utils';
 import type { AuditLogResponse, QQStatus } from '../types';
 
@@ -175,6 +176,8 @@ export default function Settings() {
         </section>
 
         {!mustChangePassword && <>
+        <LoginMethodSettings />
+
         {/* QQ 集成状态 */}
         <section className="ws-panel">
           <div className="ws-panel-title">

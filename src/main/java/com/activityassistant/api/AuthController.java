@@ -151,6 +151,8 @@ public class AuthController {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("exported_at", LocalDateTime.now().toString());
         payload.put("account", account.toPublicMap());
+        payload.put("login_methods", db.list("SELECT provider, CASE WHEN provider='phone' THEN subject END AS phone "
+                + "FROM account_login_methods WHERE account_id=?", account.id()));
         payload.put("classes", db.list("SELECT c.id, c.name FROM class_members cm JOIN classes c ON c.id=cm.class_id WHERE cm.account_id=?", account.id()));
         payload.put("submissions", db.list("SELECT t.title, ta.status, ta.note, ta.original_filename, ta.submitted_at FROM todo_assignees ta JOIN todos t ON t.id=ta.todo_id WHERE ta.account_id=?", account.id()));
         payload.put("privacy_consents", db.list("SELECT policy_version, accepted_at FROM privacy_consents WHERE account_id=?", account.id()));
@@ -164,11 +166,15 @@ public class AuthController {
     ResponseEntity<Map<String, String>> deleteAccount(Authentication authentication) {
         AccountPrincipal account = required(authentication);
         if (account.isManager()) throw ApiException.badRequest("管理者需要先转移或删除名下组织，暂时不能直接注销");
+        db.one("SELECT 1 FROM accounts WHERE id=? FOR UPDATE", account.id());
         db.list("SELECT storage_key FROM file_assets WHERE account_id=?", account.id())
                 .forEach(asset -> storage.delete(String.valueOf(asset.get("storage_key"))));
         List<Map<String, Object>> organizations = db.list("SELECT organization_id FROM organization_members WHERE account_id=?", account.id());
         organizations.forEach(org -> audits.write("account.delete", account.id(), String.valueOf(org.get("organization_id")), "account", account.id(), null));
         db.update("DELETE FROM auth_sessions WHERE account_id=?", account.id());
+        db.update("DELETE FROM account_login_methods WHERE account_id=?", account.id());
+        db.update("DELETE FROM phone_login_challenges WHERE account_id=?", account.id());
+        db.update("DELETE FROM wechat_login_states WHERE binding_account_id=?", account.id());
         db.update("DELETE FROM privacy_consents WHERE account_id=?", account.id());
         db.update("DELETE FROM class_members WHERE account_id=?", account.id());
         db.update("DELETE FROM todo_assignees WHERE account_id=?", account.id());
@@ -191,11 +197,11 @@ public class AuthController {
     }
 
     private ResponseEntity<Map<String, Object>> withCookie(AuthService.LoginResult result) {
-        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, sessionCookie(result.token()).toString())
+        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, sessionCookie(properties, result.token()).toString())
                 .body(result.account().toPublicMap());
     }
 
-    private ResponseCookie sessionCookie(String token) {
+    static ResponseCookie sessionCookie(AppProperties properties, String token) {
         return ResponseCookie.from(AuthService.SESSION_COOKIE, token).httpOnly(true).secure(properties.cookieSecure())
                 .sameSite("Strict").path("/").maxAge(Duration.ofDays(properties.sessionDays())).build();
     }
@@ -205,7 +211,7 @@ public class AuthController {
                 .sameSite("Strict").path("/").maxAge(Duration.ZERO).build();
     }
 
-    private String rawToken(HttpServletRequest request) {
+    static String rawToken(HttpServletRequest request) {
         if (request.getCookies() == null) return null;
         return Arrays.stream(request.getCookies()).filter(cookie -> AuthService.SESSION_COOKIE.equals(cookie.getName()))
                 .map(Cookie::getValue).findFirst().orElse(null);

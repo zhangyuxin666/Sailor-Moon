@@ -1,6 +1,7 @@
 package com.activityassistant;
 
 import com.activityassistant.config.AppProperties;
+import com.activityassistant.config.LoginMethodProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration;
@@ -11,7 +12,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @EnableScheduling
 @SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
-@EnableConfigurationProperties(AppProperties.class)
+@EnableConfigurationProperties({AppProperties.class, LoginMethodProperties.class})
 public class ActivityAssistantApplication extends SpringBootServletInitializer {
     public static void main(String[] args) {
         SpringApplication.run(ActivityAssistantApplication.class, args);

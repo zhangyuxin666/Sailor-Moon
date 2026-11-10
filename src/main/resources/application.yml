@@ -50,6 +50,14 @@ app:
   public-base-url: ${PUBLIC_BASE_URL:http://127.0.0.1:8080}
   cookie-secure: ${COOKIE_SECURE:false}
   session-days: ${SESSION_DAYS:7}
+  login:
+    wechat-app-id: ${WECHAT_APP_ID:}
+    wechat-app-secret: ${WECHAT_APP_SECRET:}
+    sms-access-key-id: ${SMS_ACCESS_KEY_ID:}
+    sms-access-key-secret: ${SMS_ACCESS_KEY_SECRET:}
+    sms-sign-name: ${SMS_SIGN_NAME:}
+    sms-template-code: ${SMS_TEMPLATE_CODE:}
+    sms-scheme-name: ${SMS_SCHEME_NAME:}
   upload-max-mb: ${UPLOAD_MAX_MB:20}
   user-storage-quota-mb: ${USER_STORAGE_QUOTA_MB:200}
   storage-local-path: ${STORAGE_LOCAL_PATH:data/uploads}

@@ -107,6 +107,8 @@
 .valley-account-tabs { display: flex; gap: 24px; margin: 24px 0 20px; border-bottom: 2px solid #d9b880; }
 .valley-account-tabs button { font: inherit; font-size: 13px; padding: 0 0 10px; border: 0; border-bottom: 3px solid transparent; color: #a0825a; background: transparent; cursor: pointer; }
 .valley-account-tabs button[aria-pressed=true] { color: #6c803f; border-bottom-color: #6c803f; }
+.valley-login-methods { flex-wrap: wrap; gap: 8px 18px; }
+.valley-login-methods button:disabled { opacity: .55; cursor: default; }
 .valley-account-fields .auth-form { width: 100%; max-width: none; gap: 14px; margin: 22px 0 0; }
 .valley-account-fields .auth-form label { color: #795233; font-size: 12px; gap: 7px; }
 .valley-account-fields .auth-form input { min-width: 0; background: #fff9e5; border: 2px solid #c39a61; color: #614329; border-radius: 0; min-height: 42px; padding: 10px 12px; }

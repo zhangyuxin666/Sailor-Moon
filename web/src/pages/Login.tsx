@@ -1,12 +1,14 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, useApi } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import type { Account, AuthStatus } from '../types';
 import DataState from '../components/DataState';
 import { passwordChangeRequired } from '../lib/auth-policy';
 import StardewLoginScene from '../components/StardewLoginScene';
 import ValleyCharacterEditor, { DEFAULT_APPEARANCE, readAppearance, type CharacterAppearance } from '../components/ValleyCharacterEditor';
+import PhoneCodeForm from '../components/PhoneCodeForm';
+import { openWechat, wechatFeedback, type LoginMethodAvailability } from '../lib/login-methods';
 
 type Role = 'manager' | 'participant' | 'guest';
 const roles: { id: Role; name: string; description: string }[] = [
@@ -26,6 +28,9 @@ export default function Login() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [method, setMethod] = useState<'password' | 'phone'>('password');
+  const { data: methods, loading: methodsLoading, error: methodsError, reload: reloadMethods } =
+    useApi(() => api<LoginMethodAvailability>('/auth/login-methods'));
   const [role, setRole] = useState<Role>('manager');
   const [guestTour, setGuestTour] = useState(false);
   const [username, setUsername] = useState('');
@@ -46,6 +51,8 @@ export default function Login() {
     } catch { /* Browser storage is optional. */ }
   };
   const newUser = creating || !initialized;
+  const showMethods = !newUser && role !== 'guest';
+  const wechatMessage = wechatFeedback(location.search);
   const passwordChanged = (location.state as { passwordChanged?: boolean } | null)?.passwordChanged === true;
 
   useEffect(() => {
@@ -87,6 +94,22 @@ export default function Login() {
     finally { setSubmitting(false); }
   };
 
+  async function finishPhone(signedIn: Account) {
+    await refresh();
+    navigate(passwordChangeRequired(signedIn) ? '/settings' : '/portal', { replace: true });
+  }
+
+  async function startWechat() {
+    setSubmitting(true);
+    setError('');
+    try { await openWechat(); }
+    catch (cause) {
+      setError(cause instanceof Error ? cause.message : '暂时无法打开微信二维码，请重试');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return <StardewLoginScene loading={loading}>
     {loading ? <p role="status">正在打开山谷日记…</p>
       : statusError ? <DataState error={statusError} onRetry={() => setAttempt(v => v + 1)} />
@@ -105,7 +128,25 @@ export default function Login() {
               {roles.map(item => <button type="button" key={item.id} aria-pressed={role === item.id} disabled={submitting || (!initialized && item.id === 'participant')} onClick={() => { setRole(item.id); setError(''); }}><strong>{item.name}</strong><small>{item.description}</small></button>)}
             </div>
             {role !== 'guest' && initialized && <div className="valley-account-tabs" role="group" aria-label="账号操作"><button type="button" disabled={submitting} aria-pressed={!creating} onClick={() => { setCreating(false); setError(''); }}>已有账号登录</button><button type="button" disabled={submitting} aria-pressed={creating} onClick={() => { setCreating(true); setError(''); }}>创建用户</button></div>}
-            <form className="auth-form" onSubmit={handleSubmit}>
+            {showMethods && <>
+              <div className="valley-account-tabs valley-login-methods" role="group" aria-label="登录方式">
+                <button type="button" aria-pressed={method === 'password'} disabled={submitting}
+                  onClick={() => { setMethod('password'); setError(''); }}>用户名密码</button>
+                <button type="button" aria-pressed={method === 'phone'} disabled={submitting || !methods?.phone}
+                  onClick={() => { setMethod('phone'); setError(''); }}>手机号登录</button>
+                <button type="button" disabled={submitting || !methods?.wechat} onClick={() => void startWechat()}>微信扫码登录</button>
+              </div>
+              {methodsError ? <DataState error={methodsError} onRetry={reloadMethods} /> : !methodsLoading && <p className="valley-account-note">
+                {methods?.phone && methods?.wechat ? '请先在设置中绑定手机号或微信。' :
+                  methods?.phone ? '请先在设置中绑定手机号。微信扫码登录暂未启用。' :
+                    methods?.wechat ? '请先在设置中绑定微信。手机号登录暂未启用。' : '手机号和微信扫码登录暂未启用。'}
+              </p>}
+              {wechatMessage && <p className="auth-error" role="alert">{wechatMessage}</p>}
+            </>}
+            {showMethods && method === 'phone' && methods?.phone ? <>
+              {error && <div className="auth-error" role="alert">{error}</div>}
+              <PhoneCodeForm onLogin={finishPhone} onBusyChange={setSubmitting} />
+            </> : <form className="auth-form" onSubmit={handleSubmit}>
               {role === 'guest' ? <div className="valley-guest-note"><h3>随时来山谷坐坐</h3><p>无需用户名和密码。先浏览示例活动与任务，准备好后再创建自己的档案。</p></div> : <>
                 {passwordChanged && <p role="status">密码已更新，请重新登录。</p>}
                 {!initialized && <p className="valley-account-note">首次使用，请先创建管理者和组织。</p>}
@@ -119,7 +160,7 @@ export default function Login() {
               </>}
               {error && <div className="auth-error" role="alert">{error}</div>}
               <button type="submit" disabled={submitting}>{submitting ? '正在打开日记…' : role === 'guest' ? '以游客身份游览' : newUser ? '创建用户并进入山谷' : '登录并进入山谷'} <b aria-hidden="true">→</b></button>
-            </form>
+            </form>}
           </div>
         </div>
       </>}

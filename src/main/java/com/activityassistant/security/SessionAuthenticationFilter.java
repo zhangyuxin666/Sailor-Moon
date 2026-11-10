@@ -21,10 +21,11 @@ import java.util.Set;
 public class SessionAuthenticationFilter extends OncePerRequestFilter {
     private static final Set<String> PUBLIC_READ_PATHS = Set.of(
             "/", "/login", "/portal", "/agent", "/assignments", "/members", "/settings", "/activity", "/privacy",
-            "/auth/status", "/health", "/health/ready", "/cluster/node", "/actuator/health",
+            "/auth/status", "/auth/login-methods", "/auth/wechat/callback", "/health", "/health/ready", "/cluster/node", "/actuator/health",
             "/actuator/health/liveness", "/actuator/health/readiness");
     private static final Set<String> AUTH_POST_PATHS = Set.of(
-            "/auth/login", "/auth/bootstrap", "/auth/change-password", "/auth/logout");
+            "/auth/login", "/auth/bootstrap", "/auth/change-password", "/auth/logout",
+            "/auth/phone/code", "/auth/phone/login", "/auth/wechat/start");
 
     private final AuthService authService;
 

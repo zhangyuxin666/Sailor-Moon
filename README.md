@@ -81,6 +81,15 @@ Invoke-RestMethod http://127.0.0.1:18080/cluster/node
 Invoke-RestMethod http://127.0.0.1:8000/health/ready
 ```
 
+## 微信扫码与手机号登录
+
+启用后，用户先用用户名和密码登录，在「设置 → 登录方式」绑定微信或中国大陆手机号。退出后可在登录页选择微信扫码或短信验证码。绑定方式可以在设置中更换或解绑，登录沿用原有账号权限。
+
+- 微信扫码登录需要在微信开放平台为已审核的网站应用开通微信登录，将授权回调域设为站点域名。设置 `WECHAT_APP_ID` 和 `WECHAT_APP_SECRET`。站点须使用公开 HTTPS，回调为 `https://<域名>/auth/wechat/callback`。生产 Compose 由 `DOMAIN` 生成 `PUBLIC_BASE_URL`。自行部署时设置 `PUBLIC_BASE_URL=https://<域名>` 和 `COOKIE_SECURE=true`。[微信开放平台](https://open.weixin.qq.com/)
+- 短信登录使用阿里云号码认证服务，需提供获准的签名和含 `code`、`min` 变量的验证码模板。设置 `SMS_ACCESS_KEY_ID`、`SMS_ACCESS_KEY_SECRET`、`SMS_SIGN_NAME`、`SMS_TEMPLATE_CODE`。指定认证方案时再设置 `SMS_SCHEME_NAME`。RAM 凭据需要 `dypns:SendSmsVerifyCode` 权限。[阿里云接入指南](https://help.aliyun.com/zh/pnvs/use-cases/sms-verify-for-individual-developers)
+
+把配置写入后端运行环境，Compose 部署使用对应的 `.env` 或 `.env.production`。重新构建并启动后端，Flyway 会应用 V12。凭据未配置时，对应入口显示为暂未启用。自行部署反向代理时，由代理覆盖客户端提交的转发地址头，以保证按 IP 限流有效。
+
 ## 本地开发
 
 业务后端要求 JDK 21：

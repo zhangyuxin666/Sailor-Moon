@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -25,6 +26,8 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/auth/login-methods", "/auth/wechat/callback").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/phone/code", "/auth/phone/login", "/auth/wechat/start").permitAll()
                         .requestMatchers("/", "/login", "/portal", "/agent", "/assignments", "/members",
                                 "/settings", "/knowledge", "/participation", "/templates",
                                 "/activity", "/activity/**", "/privacy", "/static/**", "/assets/**", "/favicon.*",
