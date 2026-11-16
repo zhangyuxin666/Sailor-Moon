@@ -24,6 +24,7 @@ import Privacy from './pages/Privacy';
 import Knowledge from './pages/Knowledge';
 import Participation from './pages/Participation';
 import Templates from './pages/Templates';
+import Analytics from './pages/Analytics';
 
 export default function App() {
   return (
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/members" element={<Members />} />
         <Route path="/activity" element={<ActivityList />} />
         <Route path="/activity/:id" element={<ActivityDetail />} />
+        <Route path="/analytics" element={<Analytics />} />
       </Route>
 
       {/* 根路径重定向 */}

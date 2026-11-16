@@ -1,0 +1,92 @@
+/* ===== 星露谷 HUD：右上时钟 / 右下体力 ===== */
+
+/* 时钟固定在每个画面右上角 */
+.game-clock {
+  position: fixed;
+  top: clamp(8px, 1.1vh, 16px);
+  right: clamp(10px, 1.4vw, 22px);
+  z-index: 60;
+  width: clamp(168px, 15vw, 232px);
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 4px rgba(90, 55, 25, .28));
+}
+
+.game-clock img {
+  display: block;
+  width: 100%;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+/* 贴图上原来的日期/时间/金币位置，用同色底盖住后叠实时文字 */
+.game-clock-date,
+.game-clock-time,
+.game-clock-gold {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b3d16;
+  font-family: var(--pixel-font, 'zpix', 'Microsoft YaHei', sans-serif);
+  font-weight: 700;
+  white-space: nowrap;
+  background: linear-gradient(180deg, #f8e6c0 0%, #f1d9a8 100%);
+  border-radius: 4px;
+}
+
+.game-clock-date {
+  left: 37.4%;
+  top: 4.7%;
+  width: 50.5%;
+  height: 13.2%;
+  font-size: clamp(10px, .95vw, 13px);
+}
+
+.game-clock-time {
+  left: 37.8%;
+  top: 43.3%;
+  width: 49%;
+  height: 16.5%;
+  font-size: clamp(11px, 1.15vw, 15px);
+}
+
+.game-clock-gold {
+  left: 15.5%;
+  top: 76.5%;
+  width: 76%;
+  height: 13.5%;
+  color: #f0e2c8;
+  background: #4a2511;
+  font-size: clamp(10px, .95vw, 13px);
+  letter-spacing: .04em;
+}
+
+/* 体力条固定在右下角 */
+.game-energy {
+  position: fixed;
+  right: clamp(10px, 1.2vw, 18px);
+  bottom: clamp(10px, 1.6vh, 18px);
+  z-index: 55;
+  user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(90, 55, 25, .35));
+}
+
+.game-energy img {
+  display: block;
+  width: clamp(26px, 2.4vw, 38px);
+  height: auto;
+  image-rendering: pixelated;
+}
+
+/* 时钟已经显示日期时间，工作台顶部那行重复的日期隐藏 */
+.valley-workspace-bar time {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .game-clock { width: 132px; }
+  .game-energy img { width: 24px; }
+}

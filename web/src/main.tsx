@@ -12,6 +12,8 @@ import './styles/global.css';
 import './styles/stardew.css';
 import './styles/stardew-home.css';
 import './styles/valley-character.css';
+import './styles/game-hud.css';
+import './styles/one-screen.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

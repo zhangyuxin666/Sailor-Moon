@@ -169,7 +169,12 @@ dialog::backdrop { background: #132c3a88; backdrop-filter: blur(2px); }
 .policy-page > a { border-radius: 0; border-color: #ad814c; background: #f8e4b7; font-size: 12px; }
 
 /* The same farm journal surrounds every authenticated page. */
-.ws-shell { grid-template-columns: 244px minmax(0, 1fr); background: #fff0d4e8; }
+.ws-shell {
+  grid-template-columns: 244px minmax(0, 1fr);
+  background:
+    linear-gradient(180deg, rgba(18, 57, 86, .12), rgba(20, 88, 75, .20)),
+    url('/assets/stardew/landscape.png') center top / cover fixed no-repeat;
+}
 .ws-sidebar {
   width: 244px; padding: 24px 16px 16px; border-right: 5px solid #633d24;
   color: #fff0bc; background: repeating-linear-gradient(0deg, #986236 0 90px, #87532e 90px 94px);
@@ -192,6 +197,43 @@ dialog::backdrop { background: #132c3a88; backdrop-filter: blur(2px); }
 .ws-user small { color: #e8c88d; font-size: 12px; }
 .ws-avatar { color: #634022; border: 2px solid #5d3d24; border-radius: 0; background: #f1d49c; }
 .ws-main { grid-column: 2; width: calc(100% - 64px); max-width: 1250px; margin: 0 auto; padding-top: 25px; }
+
+/* Shared frosted farm journal surface for every authenticated page. */
+.ws-shell .ws-header,
+.ws-shell .ws-panel,
+.ws-shell .ws-metric,
+.ws-shell .agent-compose,
+.ws-shell .agent-hero,
+.ws-shell .integration-card,
+.ws-shell .settings-card,
+.ws-shell .data-table-wrap,
+.ws-shell .table-wrap,
+.ws-shell .form-card,
+.ws-shell .ws-empty {
+  border-color: rgba(255, 244, 205, .72);
+  background-color: rgba(255, 249, 220, .68);
+  box-shadow: 0 8px 0 rgba(67, 49, 30, .20), 0 18px 42px rgba(5, 34, 49, .20), inset 0 1px rgba(255, 255, 255, .78);
+  backdrop-filter: blur(16px) saturate(1.22);
+  -webkit-backdrop-filter: blur(16px) saturate(1.22);
+}
+.ws-shell .ws-list-item,
+.ws-shell .data-table,
+.ws-shell .agent-compose-footer,
+.ws-shell .integration-row {
+  background-color: rgba(255, 251, 231, .56);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.ws-shell .ws-header {
+  padding: 22px;
+  border: 1px solid rgba(255, 244, 205, .7);
+  border-radius: 14px;
+}
+.ws-shell .valley-workspace-bar {
+  background-color: rgba(255, 241, 201, .82);
+  backdrop-filter: blur(13px) saturate(1.15);
+  -webkit-backdrop-filter: blur(13px) saturate(1.15);
+}
 .ws-main button:not(.ws-button):not(.dialog-close):not(.task-toggle) {
   border: 2px solid #b2834b; border-radius: 2px; padding: 6px 9px;
   color: #6e482c; background: #fbe3af; font-family: var(--font-sans); cursor: pointer;

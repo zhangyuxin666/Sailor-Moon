@@ -1,10 +1,10 @@
 /* Detailed LPC character dressing room, with native 64px frames. */
 .valley-character-layout { grid-template-columns: 340px minmax(0, 1fr); gap: 32px; }
 .valley-screen-account .valley-stage-content { max-width: 1120px; }
-.valley-detailed-editor { border: 4px double #a87b43; background: #e8c58c; box-shadow: inset 0 0 0 3px #f9dda7, 4px 5px #b7935b44; padding: 14px; min-width: 0; }
-.valley-editor-topline { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: #77502c; margin-bottom: 10px; }
+.valley-detailed-editor { border: 10px solid transparent; border-image: var(--valley-frame) 15 / 10px stretch; background: linear-gradient(#f8dda2,#e8bd78); box-shadow: inset 0 0 0 3px #fff0bd, 5px 7px #5d3a2450; padding: 15px; min-width: 0; }
+.valley-editor-topline { display:flex; align-items:center; justify-content:space-between; margin:-3px -3px 12px; padding:8px 10px; border:2px solid #754629; color:#fff2bc; background:linear-gradient(#a96836,#84502e); box-shadow:inset 2px 2px #cc9154,inset -2px -2px #5e381f; font-size:13px; text-shadow:1px 1px #5d371f; }
 .valley-editor-topline span:last-child { font-size: 9px; color: #947147; }
-.valley-farmer-stage { position: relative; isolation: isolate; height: 260px; overflow: hidden; background: linear-gradient(#acd9d4 0%, #d2e9ce 65%, #8ba267 65%, #71884f 100%); border: 4px solid #987247; box-shadow: inset 3px 3px #445e5a33; }
+.valley-farmer-stage { position:relative; isolation:isolate; height:260px; overflow:hidden; background:linear-gradient(#71c7df 0%,#bde8dc 63%,#83b95e 63%,#5d8b43 100%); border:4px solid #7b4b2b; box-shadow:inset 3px 3px #ffffff55,inset -3px -3px #3c663955; }
 .valley-farmer-stage::before { content: ''; position: absolute; left: -10%; right: -10%; bottom: 35%; height: 36%; background: #87bca2; clip-path: polygon(0 100%, 14% 40%, 24% 66%, 45% 10%, 65% 75%, 80% 30%, 100% 100%); }
 .valley-farmer-stage::after { content: ''; position: absolute; inset: 65% 0 0; opacity: .2; background: repeating-linear-gradient(0deg, transparent 0 15px, #f5e2ac 15px 17px), repeating-linear-gradient(90deg, transparent 0 15px, #f5e2ac 15px 17px); transform: perspective(100px) rotateX(25deg) scale(1.5); }
 .valley-stage-sun { position: absolute; top: 20px; right: 25px; width: 24px; height: 24px; background: #fff0a4; box-shadow: 4px 0 #fff0a4, -4px 0 #fff0a4, 0 4px #fff0a4, 0 -4px #fff0a4; }
@@ -21,18 +21,22 @@
 .valley-body-picker { display: flex; gap: 10px; align-items: center; font-size: 11px; padding: 0 0 12px; }
 .valley-body-picker > span { margin-right: auto; }
 .valley-body-picker button { padding: 6px 12px; font-size: 11px; }
-.valley-editor-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 2px solid #b4925d; }
-.valley-editor-tabs button { padding: 8px 4px; border-bottom: 0; font-size: 12px; }
+.valley-editor-tabs { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; padding:6px; border:2px solid #9d7040; background:#c8995d; box-shadow:inset 2px 2px #b17f47; }
+.valley-editor-tabs button { min-height:36px; padding:8px 4px; border:2px solid #815331; font-size:12px; background:#efd095; }
+.valley-editor-tabs button[aria-pressed=true] { color:#4d672f; background:#fff0b3; box-shadow:inset 0 -4px #a5bd66,0 2px #6d482d; transform:translateY(-1px); }
 .valley-style-stepper { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; }
 .valley-style-stepper button { width: 28px; height: 28px; font-size: 12px; }
 .valley-style-stepper > span { text-align: center; font-size: 12px; }
 .valley-style-stepper small { display: block; font-size: 9px; color: #9b794d; margin-top: 3px; }
-.valley-hair-catalog { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
-.valley-hair-catalog button { height: 46px; overflow: hidden; position: relative; background: #d5b783; }
-.valley-hair-thumbnail { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); width: 64px; height: 56px; background-position: 0 -128px; background-size: 576px 256px; background-repeat: no-repeat; image-rendering: pixelated; }
-.valley-hair-catalog small { position: absolute; bottom: 1px; right: 3px; font-size: 8px; color: #82633a; }
-.valley-outfit-catalog { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.valley-outfit-catalog button { padding: 10px 5px; font-size: 11px; }
+.chibi-wardrobe-editor .valley-farmer-sprite { width:230px; height:230px; bottom:33px; }
+.wardrobe-tabs { margin-top:12px; }
+.wardrobe-item-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-top:9px; padding:8px; border:3px solid #8e5b32; background:#c68c4c; box-shadow:inset 3px 3px #e2ae68,inset -3px -3px #774829; }
+.wardrobe-item-grid button { position:relative; aspect-ratio:1; min-width:0; overflow:hidden; padding:0; border:3px solid #75462a; background:linear-gradient(#8bd4e8 0 62%,#79b75e 62%); box-shadow:inset 2px 2px #c7f0f4,inset -2px -2px #4d793f; }
+.wardrobe-item-grid button[aria-pressed=true] { border-color:#fff1a8; outline:3px solid #69843d; outline-offset:1px; transform:translateY(-2px); }
+.wardrobe-item-grid button>span { position:absolute; inset:2px 2px 18px; background-image:url('/assets/character/chibi-wardrobe-v1.png'); background-repeat:no-repeat; background-size:600% 600%; image-rendering:pixelated; }
+.wardrobe-item-grid button>small { position:absolute; inset:auto 0 0; padding:3px 1px; overflow:hidden; color:#fff2c3; background:rgba(91,52,28,.88); font-size:7px; white-space:nowrap; text-overflow:ellipsis; }
+.selected-outfit-summary { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin:10px 0; }
+.selected-outfit-summary span { padding:5px 7px; border:1px solid #b98a51; color:#704727; background:rgba(255,235,183,.72); font-size:8px; text-align:center; }
 .valley-color-settings { margin: 14px 0; }
 .valley-color-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) 25px; align-items: center; gap: 6px; margin: 10px 0; }
 .valley-color-row > span { font-size: 11px; }
@@ -45,6 +49,21 @@
 .valley-editor-actions button { padding: 7px 9px; font-size: 10px; }
 .valley-editor-storage, .valley-sprite-credits { display: block; text-align: center; margin-top: 12px; font-size: 9px; color: #907047; }
 .valley-sprite-credits { margin-top: 7px; text-underline-offset: 3px; }
+
+/* The selected farmer follows the signed-in user as a draggable workspace pet. */
+.valley-workspace-pet { position:fixed; z-index:80; width:118px; height:148px; touch-action:none; user-select:none; cursor:grab; filter:drop-shadow(0 8px 7px rgba(22,38,27,.3)); }
+.valley-workspace-pet:active { cursor:grabbing; }
+.valley-workspace-pet .pet-toolbar { position:absolute; z-index:5; top:0; right:0; display:flex; gap:3px; opacity:0; transition:opacity .18s; }
+.valley-workspace-pet:hover .pet-toolbar,.valley-workspace-pet:focus-within .pet-toolbar { opacity:1; }
+.valley-workspace-pet .pet-toolbar button { display:grid; place-items:center; width:23px; height:23px; padding:0; border:2px solid #6b4328; color:#664027; background:#f7d996; box-shadow:inset 1px 1px #fff0bd; cursor:pointer; font-size:10px; }
+.valley-workspace-pet .pet-name { position:absolute; z-index:4; top:2px; left:50%; max-width:84px; padding:3px 7px; overflow:hidden; border:2px solid #76502f; border-radius:8px; color:#684127; background:#fff0b9; box-shadow:0 2px #5d3b26; transform:translateX(-50%); white-space:nowrap; text-overflow:ellipsis; font-size:9px; }
+.valley-workspace-pet .pet-sprite { position:absolute; z-index:2; left:50%; bottom:10px; width:112px; height:112px; transform:translateX(-50%); }
+.valley-workspace-pet .valley-farmer-sprite { position:static; width:112px; height:112px; transform:none; image-rendering:pixelated; }
+.valley-workspace-pet .pet-shadow { position:absolute; z-index:1; left:50%; bottom:11px; width:55px; height:14px; border-radius:50%; background:rgba(31,54,28,.32); transform:translateX(-50%); }
+.valley-workspace-pet>small { position:absolute; inset:auto 0 0; color:#fff4c8; text-align:center; text-shadow:1px 1px #50351f; font-size:8px; opacity:0; transition:opacity .18s; }.valley-workspace-pet:hover>small{opacity:1}
+.valley-workspace-pet.collapsed { width:42px; height:42px; border:3px solid #70452a; border-radius:50%; background:#f2cf83; box-shadow:inset 2px 2px #ffe9aa; }
+.valley-workspace-pet.collapsed .pet-toolbar { inset:7px auto auto 7px; opacity:1; }.valley-workspace-pet.collapsed .pet-toolbar button:first-child{display:none}.valley-workspace-pet.collapsed .pet-toolbar button{border:0;background:transparent;box-shadow:none;font-size:18px}
+@media(prefers-reduced-motion:no-preference){.valley-workspace-pet:not(.collapsed){animation:pet-float 2.4s ease-in-out infinite}}@keyframes pet-float{50%{transform:translateY(-3px)}}
 [data-motion=paused] .valley-home-clouds-near { animation-play-state: paused; }
 @media (prefers-reduced-motion: reduce) {
   .valley-screen-title .valley-home-clouds-near { animation: none; transform: scaleX(-1); }
@@ -66,6 +85,7 @@
   .valley-title-toolbar button { font-size: 10px; padding: 6px; }
   .valley-title-footer { inset: auto 12px 15px; gap: 12px; font-size: 8px; }
   .valley-title-invitation { bottom: calc(15svh + 148px); font-size: 10px; }
+  .valley-workspace-pet { transform:scale(.82); transform-origin:bottom right; }
 }
 @media (max-height: 540px) and (min-width: 721px) {
   .valley-title-invitation { bottom: calc(5svh + 110px); font-size: 10px; }
@@ -73,3 +93,6 @@
   .valley-title-toolbar { inset: 10px 15px auto; }
   .valley-title-footer { bottom: 8px; font-size: 8px; }
 }
+
+/* 造型立绘缩略图：整张人物按 contain 显示 */
+.wardrobe-item-grid button>span.look-thumb { background-image:none; background-size:contain; background-position:center bottom; background-repeat:no-repeat; }

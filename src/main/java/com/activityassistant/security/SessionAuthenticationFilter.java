@@ -20,7 +20,7 @@ import java.util.Set;
 @Component
 public class SessionAuthenticationFilter extends OncePerRequestFilter {
     private static final Set<String> PUBLIC_READ_PATHS = Set.of(
-            "/", "/login", "/portal", "/agent", "/assignments", "/members", "/settings", "/activity", "/privacy",
+            "/", "/login", "/portal", "/agent", "/assignments", "/members", "/settings", "/activity", "/analytics", "/privacy",
             "/auth/status", "/auth/login-methods", "/auth/wechat/callback", "/health", "/health/ready", "/cluster/node", "/actuator/health",
             "/actuator/health/liveness", "/actuator/health/readiness");
     private static final Set<String> AUTH_POST_PATHS = Set.of(

@@ -7,8 +7,12 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { passwordChangeRequired } from '../lib/auth-policy';
 import ValleyIcon from './ValleyIcon';
+import WorkspacePet from './WorkspacePet';
+import GameClock from './GameClock';
+import EnergyBar from './EnergyBar';
 
 const navItems = [
+  { to: '/analytics', label: '数据大屏', icon: '◈', managerOnly: true },
   { to: '/portal', label: '总览', icon: '◈', managerOnly: false },
   { to: '/agent', label: 'AI助手', icon: '✦', managerOnly: true },
   { to: '/assignments', label: '作业与待办', icon: '☰', managerOnly: false },
@@ -93,6 +97,9 @@ export default function Layout() {
         </div>
         <Outlet />
       </main>
+      <WorkspacePet username={account?.username} displayName={account?.display_name} />
+      <GameClock />
+      <EnergyBar />
     </div>
   );
 }

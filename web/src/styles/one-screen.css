@@ -1,0 +1,118 @@
+html, body, #root {
+  height: 100%;
+}
+
+/* ===== 一屏布局：工作台内所有页面不产生整页滚动 ===== */
+.ws-shell {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ws-main {
+  height: 100vh;
+  max-height: 100vh;
+  padding: clamp(14px, 2.2vh, 26px) 0 clamp(10px, 1.6vh, 18px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ws-main > * {
+  min-height: 0;
+}
+
+.valley-workspace-bar {
+  flex: 0 0 auto;
+  margin-bottom: clamp(8px, 1.4vh, 14px);
+}
+
+.ws-header {
+  flex: 0 0 auto;
+  margin-bottom: clamp(10px, 1.6vh, 16px);
+  padding-bottom: clamp(8px, 1.2vh, 12px);
+}
+
+.ws-header h1 {
+  font-size: clamp(20px, 2.4vw, 30px);
+  line-height: 1.25;
+}
+
+.ws-header p:not(.ws-kicker) {
+  font-size: clamp(11px, 1.1vw, 13px);
+  margin: 2px 0 0;
+}
+
+.ws-metrics {
+  flex: 0 0 auto;
+  margin-bottom: clamp(10px, 1.6vh, 16px);
+  gap: 12px;
+}
+
+.ws-metric {
+  min-height: 0;
+  padding: clamp(8px, 1.4vh, 14px) 14px;
+}
+
+.ws-metric strong {
+  font-size: clamp(20px, 2.2vw, 28px);
+  line-height: 1.15;
+}
+
+.ws-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(10px, 1.6vw, 16px);
+  margin-bottom: 0;
+}
+
+.ws-panel {
+  margin-bottom: 0;
+  padding: clamp(10px, 1.6vh, 16px) clamp(12px, 1.4vw, 18px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ws-panel-title {
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+}
+
+.ws-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.ws-list-item {
+  padding: 7px 10px;
+}
+
+/* 其它页面（作业、成员、活动、知识库、设置、数据分析等）同样收缩到一屏 */
+.ws-main > section,
+.ws-main > div:not(.valley-workspace-bar) {
+  min-height: 0;
+}
+
+.ws-main table {
+  font-size: clamp(11px, 1vw, 13px);
+}
+
+.ws-main .table-wrap,
+.ws-main .list-scroll {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-height: 820px) {
+  .ws-metric { padding: 6px 10px; }
+  .ws-metric strong { font-size: 20px; }
+  .ws-header p:not(.ws-kicker) { display: none; }
+  .ws-list-item small { display: none; }
+}

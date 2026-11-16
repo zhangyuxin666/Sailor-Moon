@@ -29,7 +29,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/auth/login-methods", "/auth/wechat/callback").permitAll()
                         .requestMatchers(HttpMethod.POST, "/auth/phone/code", "/auth/phone/login", "/auth/wechat/start").permitAll()
                         .requestMatchers("/", "/login", "/portal", "/agent", "/assignments", "/members",
-                                "/settings", "/knowledge", "/participation", "/templates",
+                                "/settings", "/knowledge", "/participation", "/templates", "/analytics",
                                 "/activity", "/activity/**", "/privacy", "/static/**", "/assets/**", "/favicon.*",
                                 "/health", "/health/ready", "/cluster/node", "/actuator/health/**", "/auth/status",
                                 "/auth/bootstrap", "/auth/login", "/auth/register", "/public/forms/**", "/forms/**",
