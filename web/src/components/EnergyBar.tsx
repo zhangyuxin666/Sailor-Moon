@@ -4,7 +4,10 @@
 export default function EnergyBar() {
   return (
     <div className="game-energy" aria-label="体力 100 / 100">
-      <img src="/assets/stardew/ui/energy.png" alt="" draggable={false} />
+      <picture>
+        <source srcSet="/assets/stardew/ui/energy.webp" type="image/webp" />
+        <img src="/assets/stardew/ui/energy.png" width={52} height={294} alt="" draggable={false} />
+      </picture>
     </div>
   );
 }

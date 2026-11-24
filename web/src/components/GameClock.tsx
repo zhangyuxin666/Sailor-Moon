@@ -39,7 +39,10 @@ export default function GameClock() {
 
   return (
     <div className="game-clock" aria-label={`日期 ${date}，时间 ${time}，金币 ${gold}`}>
-      <img src="/assets/stardew/ui/clock.png" alt="" draggable={false} />
+      <picture>
+        <source srcSet="/assets/stardew/ui/clock.webp" type="image/webp" />
+        <img src="/assets/stardew/ui/clock.png" width={455} height={363} alt="" draggable={false} />
+      </picture>
       <span className="game-clock-date">{date}</span>
       <span className="game-clock-time">{time}</span>
       <span className="game-clock-gold">{gold.toLocaleString('en-US')}</span>

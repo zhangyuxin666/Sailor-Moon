@@ -8,23 +8,26 @@
  * - /agent、/members、/activity、/activity/:id（需管理者）
  * - / 重定向到 /portal（已登录）或 /login（未登录）
  */
+import { lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import { RequireAuth, RequireManager } from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Portal from './pages/Portal';
-import Agent from './pages/Agent';
-import Assignments from './pages/Assignments';
-import Members from './pages/Members';
-import Settings from './pages/Settings';
-import ActivityList from './pages/ActivityList';
-import ActivityDetail from './pages/ActivityDetail';
 import PublicForm from './pages/PublicForm';
 import Privacy from './pages/Privacy';
-import Knowledge from './pages/Knowledge';
-import Participation from './pages/Participation';
-import Templates from './pages/Templates';
-import Analytics from './pages/Analytics';
+
+const Agent = lazy(() => import('./pages/Agent'));
+const Assignments = lazy(() => import('./pages/Assignments'));
+const Members = lazy(() => import('./pages/Members'));
+const Settings = lazy(() => import('./pages/Settings'));
+const ActivityList = lazy(() => import('./pages/ActivityList'));
+const ActivityDetail = lazy(() => import('./pages/ActivityDetail'));
+const ClassChat = lazy(() => import('./pages/ClassChat'));
+const Knowledge = lazy(() => import('./pages/Knowledge'));
+const Participation = lazy(() => import('./pages/Participation'));
+const Templates = lazy(() => import('./pages/Templates'));
+const Analytics = lazy(() => import('./pages/Analytics'));
 
 export default function App() {
   return (
@@ -37,6 +40,7 @@ export default function App() {
       {/* 需登录的工作台页面（共用 Layout 侧边栏） */}
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route path="/portal" element={<Portal />} />
+        <Route path="/chat" element={<ClassChat />} />
         <Route path="/assignments" element={<Assignments />} />
         <Route path="/participation" element={<Participation />} />
         <Route path="/settings" element={<Settings />} />

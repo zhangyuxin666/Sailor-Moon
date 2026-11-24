@@ -17,6 +17,8 @@ export default defineConfig({
       '/business-templates': target,
       '/analytics': target,
       '/notifications': target,
+      '/api/chat': target,
+      '/ws/chat': { target, ws: true },
       '/runs': target,
       '/knowledge/': target,
       '/auth': target,

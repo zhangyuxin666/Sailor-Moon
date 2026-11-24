@@ -2,8 +2,8 @@
  * 工作台布局组件
  * 对应旧 frontend 中各页面共用的侧边栏壳（ws-shell / ws-sidebar / ws-nav）。
  */
-import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Suspense, useEffect, useState } from 'react';
+import { NavLink, Outlet, useMatch, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { passwordChangeRequired } from '../lib/auth-policy';
 import ValleyIcon from './ValleyIcon';
@@ -19,6 +19,7 @@ const navItems = [
   { to: '/activity', label: '活动管理', icon: '▣', managerOnly: true },
   { to: '/members', label: '成员管理', icon: '◉', managerOnly: true },
   { to: '/knowledge', label: '知识库', icon: '▤', managerOnly: true },
+  { to: '/chat', label: '班级群聊', icon: '◉', managerOnly: false },
   { to: '/participation', label: '签到与反馈', icon: '✓', managerOnly: false },
   { to: '/templates', label: '业务模板', icon: '▦', managerOnly: true },
   { to: '/settings', label: '设置', icon: '⚙', managerOnly: false },
@@ -27,6 +28,7 @@ const navItems = [
 export default function Layout() {
   const { account, logout } = useAuth();
   const navigate = useNavigate();
+  const isChat = useMatch('/chat');
   const isManager = account?.role === 'manager';
   const mustChangePassword = passwordChangeRequired(account);
   const [clock, setClock] = useState(() => new Date());
@@ -95,9 +97,11 @@ export default function Layout() {
             timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'short',
           }).format(clock)}</time>
         </div>
-        <Outlet />
+        <Suspense fallback={<div className="page-loading" role="status">页面加载中…</div>}>
+          <Outlet />
+        </Suspense>
       </main>
-      <WorkspacePet username={account?.username} displayName={account?.display_name} />
+      {!isChat && <WorkspacePet username={account?.username} displayName={account?.display_name} />}
       <GameClock />
       <EnergyBar />
     </div>

@@ -1,0 +1,111 @@
+.class-chat {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.class-chat-room {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.class-chat-room select {
+  max-width: 100%;
+  min-width: min(13rem, 100%);
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.class-chat-connection {
+  margin: 0;
+  font-size: .85em;
+}
+
+.class-chat-history {
+  block-size: clamp(15rem, 46vh, 32rem);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #b68d58;
+  background: #fff7df;
+  color: #502f1b;
+}
+
+.class-chat-earlier {
+  display: block;
+  margin: 0 auto 14px;
+}
+
+.class-chat-messages {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.class-chat-messages li {
+  justify-self: start;
+  max-inline-size: min(85%, 40rem);
+  min-inline-size: 0;
+}
+
+.class-chat-messages .class-chat-mine {
+  justify-self: end;
+}
+
+.class-chat-meta {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 0 4px 4px;
+  font-size: .8em;
+  overflow-wrap: anywhere;
+}
+
+.class-chat-meta time {
+  white-space: nowrap;
+}
+
+.class-chat-messages p {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid #c3a271;
+  border-radius: 4px;
+  background: #f4e0b3;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.class-chat-mine p {
+  border-color: #8f9c67;
+  background: #e4ebb9;
+}
+
+.ws-form.class-chat-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.class-chat-compose textarea {
+  resize: vertical;
+}
+
+.class-chat-error {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .ws-form.class-chat-compose {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .class-chat-compose > .ws-button {
+    justify-self: start;
+  }
+}
