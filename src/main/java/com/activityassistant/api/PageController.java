@@ -1,6 +1,6 @@
 package com.activityassistant.api;
 
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.DatabaseHealthMapper;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -23,10 +23,10 @@ import java.util.Map;
  */
 @Controller
 public class PageController {
-    private final Db db;
+    private final DatabaseHealthMapper database;
 
-    public PageController(Db db) {
-        this.db = db;
+    public PageController(DatabaseHealthMapper database) {
+        this.database = database;
     }
 
     @GetMapping("/")
@@ -63,7 +63,7 @@ public class PageController {
     @ResponseBody
     @GetMapping("/health/ready")
     Map<String, String> ready() {
-        db.required("SELECT 1 AS ok");
+        database.ping();
         return Map.of("status", "ready", "database", "ok");
     }
 

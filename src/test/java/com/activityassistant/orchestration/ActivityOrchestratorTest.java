@@ -2,13 +2,12 @@ package com.activityassistant.orchestration;
 
 import com.activityassistant.config.AppProperties;
 import com.activityassistant.integration.AiClient;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.ActivityWorkflowMapper;
 import com.activityassistant.service.AgentRunService;
 import com.activityassistant.service.QqService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
@@ -59,8 +58,8 @@ class ActivityOrchestratorTest {
         assertThat(journal.keys()).containsSubsequence(
                 "plan:a1", "form:a1", "tasks:a1", "cal:a1", "reminder:a1",
                 "qq:announcement:a1", "delivery:a1");
-        assertThat(db.updates).contains("UPDATE activities SET status='running' WHERE id=? [a1]");
-        assertThat(db.updates).contains("UPDATE activities SET status='ready' WHERE id=? [a1]");
+        assertThat(db.updates).contains("running:a1");
+        assertThat(db.updates).contains("ready:a1");
         assertThat(qq.sentContents).hasSize(1);
     }
 
@@ -222,11 +221,10 @@ class ActivityOrchestratorTest {
                 "Asia/Shanghai", "http://ai.local", "token", "", "", "", "", Duration.ofSeconds(1));
     }
 
-    private static final class FakeDb extends Db {
+    private static final class FakeDb implements ActivityWorkflowMapper {
         // 学习点: FakeDb 不连接 PostgreSQL，只返回固定数据并记录 INSERT/UPDATE 次数。
         private final Map<String, Object> activity;
         private final List<String> updates = new ArrayList<>();
-        private final Set<String> taskKeys = new LinkedHashSet<>();
         private final Map<String,Map<String,Object>> planTasks=new HashMap<>();
         private final Map<String, Map<String, Object>> reminders = new HashMap<>();
         private int formInserts;
@@ -236,62 +234,90 @@ class ActivityOrchestratorTest {
         private int reminderInserts;
 
         private FakeDb(Map<String, Object> activity) {
-            super(new JdbcTemplate());
             this.activity = activity;
         }
 
-        @Override
-        public Optional<Map<String, Object>> one(String sql, Object... args) {
-            if (sql.equals("SELECT * FROM activities WHERE id=?")) return Optional.of(activity);
-            if (sql.startsWith("SELECT config_json FROM activity_workflows")) return Optional.empty();
-            if (sql.startsWith("SELECT class_id, organization_id FROM activity_classes")) {
-                return Optional.of(Map.of("class_id", "c1", "organization_id", "org-1"));
-            }
-            if(sql.startsWith("SELECT * FROM tasks WHERE activity_id=? AND plan_key=?"))return Optional.ofNullable(planTasks.get(String.valueOf(args[1])));
-            if (sql.startsWith("SELECT t.id FROM tasks")) {
-                return taskKeys.contains(args[1] + "\0" + args[2])
-                        ? Optional.of(Map.of("id",planTasks.values().iterator().next().get("id"))) : Optional.empty();
-            }
-            if (sql.startsWith("SELECT a.id FROM class_members")) return Optional.of(Map.of("id", 1L));
-            if (sql.startsWith("SELECT * FROM reminders")) return Optional.ofNullable(reminders.get(String.valueOf(args[1])));
-            if (sql.startsWith("SELECT organization_id FROM activity_classes")) return Optional.of(Map.of("organization_id", "org-1"));
-            if (sql.startsWith("SELECT group_openid FROM activity_channels")) {
-                return Optional.of(Map.of("group_openid", "group-1"));
-            }
-            throw new AssertionError("Unexpected query: " + sql);
+        @Override public Map<String, Object> findActivityRow(String activityId) {
+            return activity;
         }
 
-        @Override
-        public List<Map<String, Object>> list(String sql, Object... args) {
-            if(sql.startsWith("SELECT t.id FROM tasks"))return List.of();
-            if (sql.startsWith("SELECT a.id AS account_id, a.display_name FROM class_members")) {
-                return List.of(Map.of("account_id", "acct-1", "display_name", "Alice"));
-            }
-            throw new AssertionError("Unexpected query: " + sql);
+        @Override public void markRunning(String activityId) {
+            updates.add("running:" + activityId);
         }
 
-        @Override
-        public int update(String sql, Object... args) {
-            updates.add(sql + " " + java.util.Arrays.asList(args));
-            if (sql.startsWith("UPDATE activities SET title=?, plan_json=?")) {
-                activity.put("title", args[0]);
-                activity.put("plan_json", args[1]);
-            }
-            if (sql.startsWith("INSERT INTO forms")) {
-                if (failForm) throw com.activityassistant.support.ApiException.badRequest("暂时无法创建表单");
-                formInserts += 1;
-                formFieldsJson = String.valueOf(args[3]);
-            }
-            if (sql.startsWith("INSERT INTO tasks")) {
-                taskInserts += 1;
-                planTasks.put(String.valueOf(args[8]),Map.of("id",args[0]));
-                taskKeys.add(args[2] + "\0" + "acct-1");
-            }
-            if (sql.startsWith("INSERT INTO reminders")) {
-                reminderInserts += 1;
-                reminders.put(String.valueOf(args[3]), Map.of("id", args[0]));
-            }
-            return 1;
+        @Override public void markReady(String activityId) {
+            updates.add("ready:" + activityId);
+        }
+
+        @Override public void markFailed(String activityId) {
+            updates.add("failed:" + activityId);
+        }
+
+        @Override public Map<String, Object> findScopeRow(String activityId) {
+            return Map.of("class_id", "c1", "organization_id", "org-1");
+        }
+
+        @Override public List<Map<String, Object>> listAssignees(String classId) {
+            return List.of(Map.of("account_id", "acct-1", "display_name", "Alice"));
+        }
+
+        @Override public void savePlan(String title, String plan, String activityId) {
+            activity.put("title", title); activity.put("plan_json", plan);
+        }
+
+        @Override public void markWaiting(String activityId) {}
+
+        @Override public void insertForm(String id, String activityId, String title, String fields, String now) {
+            if (failForm) throw com.activityassistant.support.ApiException.badRequest("暂时无法创建表单");
+            formInserts++; formFieldsJson = fields;
+        }
+
+        @Override public Map<String, Object> findTaskRow(String activityId, String planKey) {
+            return planTasks.get(planKey);
+        }
+
+        @Override public List<Map<String, Object>> listLegacyTasks(String activityId, String title, String accountId) {
+            return List.of();
+        }
+
+        @Override public void insertTask(String id, String activityId, String title, String assignee, String now, String description, String deadline, String priority, String planKey, String reason) {
+            taskInserts++; planTasks.put(planKey, Map.of("id", id));
+        }
+
+        @Override public void assignTask(String id, String accountId) {}
+
+        @Override public void linkPlanKey(String planKey, String id) {}
+
+        @Override public void insertMessage(String id, String recipient, String content, String now, String accountId) {}
+
+        @Override public void insertDependency(String taskId, String dependencyId) {}
+
+        @Override public Map<String, Object> findReminderRow(String activityId, String time) {
+            return reminders.get(time);
+        }
+
+        @Override public void insertReminder(String id, String activityId, String message, String time, String now) {
+            reminderInserts++; reminders.put(time, Map.of("id", id));
+        }
+
+        @Override public Map<String, Object> findChannelRow(String activityId) {
+            return Map.of("group_openid", "group-1");
+        }
+
+        @Override public Map<String, Object> findOriginalDeliveryRow(String key) {
+            return null;
+        }
+
+        @Override public Map<String, Object> findOrganizationRow(String activityId) {
+            return Map.of("organization_id", "org-1");
+        }
+
+        @Override public List<Map<String, Object>> listPriorAssignees(String activityId, String title, String assignee) {
+            return List.of();
+        }
+
+        @Override public Map<String, Object> findWorkflowRow(String activityId) {
+            return null;
         }
     }
 

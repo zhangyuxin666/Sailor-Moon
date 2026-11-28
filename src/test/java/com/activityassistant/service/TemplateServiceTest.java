@@ -1,12 +1,12 @@
 package com.activityassistant.service;
 
 import com.activityassistant.config.AppProperties;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.TemplateMapper;
+import com.activityassistant.persistence.mapper.ActivityGateMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.ApiException;
 import com.fasterxml.jackson.databind.*;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -58,7 +58,7 @@ class TemplateServiceTest {
     Fixture fixture(){return new Fixture();}
     class Fixture {
         final MemoryDb db=new MemoryDb();final AuthService auth=mock(AuthService.class);final ClassroomService classroom=mock(ClassroomService.class);final AuditService audit=mock(AuditService.class);
-        final ActivityGate gate=new ActivityGate(db,mapper,mock(AppProperties.class),audit,mock(BackgroundJobService.class));
+        final ActivityGate gate=new ActivityGate(mock(ActivityGateMapper.class),mapper,mock(AppProperties.class),audit,mock(BackgroundJobService.class));
         final TemplateService service=new TemplateService(db,auth,classroom,gate,audit,mapper);
         Fixture(){when(auth.organizationOf(manager.id())).thenReturn("org-one");when(classroom.requireClassManager("class-one",manager)).thenReturn(Map.of("organization_id","org-one"));}
         JsonNode apply(String request)throws Exception{return tree("{\"class_id\":\"class-one\",\"request_id\":\""+request+"\"}");}
@@ -125,32 +125,86 @@ class TemplateServiceTest {
         assertEquals("Transport preference",saved.path("form_fields").get(2).path("label").asText());
         assertEquals("Shared coach",saved.path("form_fields").get(2).path("options").get(0).asText());assertFalse(saved.toString().contains("PRIVATE"));
     }
-    static class MemoryDb extends Db {
+    static class MemoryDb implements TemplateMapper {
         final Map<String,Map<String,Object>> applications=new LinkedHashMap<>(),drafts=new LinkedHashMap<>();
         List<Map<String,Object>> sourceDrafts=List.of(),sourceActivities=List.of();int sourceQueries;String membershipRole="manager";
-        MemoryDb(){super(new JdbcTemplate());}
-        @Override public List<Map<String,Object>> list(String sql,Object... args){
-            if(sql.startsWith("SELECT * FROM business_templates"))return List.of();
-            if(sql.startsWith("SELECT id,status,draft_json FROM agent_drafts")){
-                sourceQueries++;assertTrue(sql.contains("WHERE organization_id=? AND creator_id=?"));assertArrayEquals(new Object[]{"org-one","manager-id"},args);return sourceDrafts;
-            }
-            if(sql.startsWith("SELECT a.id,a.title,a.status FROM activities")){
-                sourceQueries++;assertTrue(sql.contains("WHERE ac.organization_id=? AND a.user_id=?"));assertArrayEquals(new Object[]{"org-one","manager"},args);return sourceActivities;
-            }
-            throw new AssertionError("Unexpected list: "+sql);
+        @Override public Map<String, Object> findMembershipRow(String organizationId, String accountId) {
+            assertEquals("org-one", organizationId); assertEquals("manager-id", accountId);
+            return membershipRole == null ? null : Map.of("role", membershipRole);
         }
-        @Override public Optional<Map<String,Object>> one(String sql,Object... args){
-            if(sql.equals("SELECT role FROM organization_members WHERE organization_id=? AND account_id=?")){
-                assertArrayEquals(new Object[]{"org-one","manager-id"},args);return membershipRole==null?Optional.empty():Optional.of(Map.of("role",membershipRole));
-            }
-            if(sql.startsWith("SELECT * FROM template_applications"))return Optional.ofNullable(applications.get(args[0]+":"+args[1]));
-            if(sql.startsWith("SELECT * FROM business_templates")||sql.startsWith("SELECT draft_json FROM agent_drafts"))return Optional.empty();
-            throw new AssertionError("Unexpected query: "+sql);
+
+        @Override public List<Map<String, Object>> listTemplates(String organizationId) {
+            return List.of();
         }
-        @Override public int update(String sql,Object... args){
-            if(sql.startsWith("INSERT INTO template_applications")){String key=args[0]+":"+args[1];if(applications.containsKey(key))return 0;applications.put(key,Map.of("account_id",args[0],"request_id",args[1],"template_id",args[2],"class_id",args[3],"payload_hash",args[4],"draft_id",args[5]));return 1;}
-            if(sql.startsWith("INSERT INTO agent_drafts")){drafts.put(String.valueOf(args[0]),Map.of("id",args[0],"draft_json",args[7],"status","draft"));return 1;}
-            throw new AssertionError("Unexpected update: "+sql);
+
+        @Override public Map<String, Object> findTemplateRow(String id, String organizationId) {
+            return null;
+        }
+
+        @Override public List<Map<String, Object>> listSourceDrafts(String organizationId, String creatorId) {
+            sourceQueries++; assertEquals("org-one", organizationId); assertEquals("manager-id", creatorId);
+            return sourceDrafts;
+        }
+
+        @Override public List<Map<String, Object>> listSourceActivities(String organizationId, String username) {
+            sourceQueries++; assertEquals("org-one", organizationId); assertEquals("manager", username);
+            return sourceActivities;
+        }
+
+        @Override public Map<String, Object> findSourceDraftRow(String id, String organizationId, String creatorId) {
+            return null;
+        }
+
+        @Override public Map<String, Object> findActivityScopeRow(String activityId) {
+            throw new AssertionError("Unexpected call: findActivityScope");
+        }
+
+        @Override public Map<String, Object> findActivityPlan(String activityId) {
+            throw new AssertionError("Unexpected call: findActivityPlan");
+        }
+
+        @Override public Map<String, Object> findWorkflowRow(String activityId) {
+            throw new AssertionError("Unexpected call: findWorkflow");
+        }
+
+        @Override public List<Map<String, Object>> listSourceTasks(String activityId) {
+            throw new AssertionError("Unexpected call: listSourceTasks");
+        }
+
+        @Override public List<Map<String, Object>> listDependencies(Object taskId) {
+            throw new AssertionError("Unexpected call: listDependencies");
+        }
+
+        @Override public void insertTemplate(String id, String organizationId, String creatorId, String name, String description, String blueprint, String now, String updatedAt) {
+            throw new AssertionError("Unexpected call: insertTemplate");
+        }
+
+        @Override public Map<String, Object> lockTemplateRow(String id, String organizationId) {
+            throw new AssertionError("Unexpected call: lockTemplate");
+        }
+
+        @Override public void updateTemplate(String name, String description, String blueprint, String updatedAt, String id) {
+            throw new AssertionError("Unexpected call: updateTemplate");
+        }
+
+        @Override public void deleteTemplate(String id) {
+            throw new AssertionError("Unexpected call: deleteTemplate");
+        }
+
+        @Override public Map<String, Object> findApplicationRow(String accountId, String requestId) {
+            return applications.get(accountId + ":" + requestId);
+        }
+
+        @Override public int insertApplication(String accountId, String requestId, String templateId, String classId, String hash, String draftId, String now) {
+            String key = accountId + ":" + requestId;
+            if (applications.containsKey(key)) return 0;
+            applications.put(key, Map.of("account_id", accountId, "request_id", requestId,
+                    "template_id", templateId, "class_id", classId, "payload_hash", hash, "draft_id", draftId));
+            return 1;
+        }
+
+        @Override public void insertDraft(String id, String organizationId, String classId, String creatorId, String rawInput, String intent, String complexity, String draft, String now, String updatedAt) {
+            drafts.put(id, Map.of("id", id, "draft_json", draft, "status", "draft"));
         }
     }
 }

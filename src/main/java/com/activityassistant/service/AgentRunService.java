@@ -3,7 +3,7 @@ package com.activityassistant.service;
 import com.activityassistant.orchestration.AgentContext;
 import com.activityassistant.orchestration.AgentResult;
 import com.activityassistant.orchestration.RunStatus;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.AgentRunMapper;
 import com.activityassistant.support.PublicErrors;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -16,19 +16,17 @@ import java.util.Map;
 
 @Service
 public class AgentRunService {
-    private final Db db;
+    private final AgentRunMapper runs;
     private final ObjectMapper mapper;
 
-    public AgentRunService(Db db, ObjectMapper mapper) {
-        this.db = db;
+    public AgentRunService(AgentRunMapper runs, ObjectMapper mapper) {
+        this.runs = runs;
         this.mapper = mapper;
     }
 
     public void create(String id, String kind, String refId, String organizationId, String actorId) {
         String now = LocalDateTime.now().toString();
-        db.update("INSERT INTO agent_runs (id, kind, ref_id, organization_id, actor_id, status, phase, created_at, updated_at) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, 'planning', ?, ?) ON CONFLICT (kind, ref_id) DO NOTHING",
-                id, kind, refId, organizationId, actorId, RunStatus.PENDING.wire(), now, now);
+        runs.create(id, kind, refId, organizationId, actorId, RunStatus.PENDING.wire(), now, now);
     }
 
     public void start(String refId) {
@@ -47,14 +45,12 @@ public class AgentRunService {
         Map<String, Object> data = mapper.convertValue(result,
                 new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
         AgentResult protocol = new AgentResult(RunStatus.SUCCEEDED, data, List.of(), List.of(), null);
-        db.update("UPDATE agent_runs SET status='succeeded', phase='delivery', result_json=?, resolution_json=?, " +
-                        "error=NULL, updated_at=? WHERE ref_id=? AND status<>'cancelled'",
-                json(result), json(protocol), LocalDateTime.now().toString(), refId);
+        runs.complete(json(result), json(protocol), LocalDateTime.now().toString(), refId);
     }
 
     public void waiting(String id){
         var result=new AgentResult(RunStatus.WAITING_INPUT,Map.of("activity_id",id,"missing_information",List.of("请确认活动时间")),List.of(),List.of("provide_input"),null);
-        db.update("UPDATE agent_runs SET status='waiting_input',phase='planning',resolution_json=?,updated_at=? WHERE kind='activity' AND ref_id=? AND status<>'cancelled'",json(result),LocalDateTime.now().toString(),id);
+        runs.markWaiting(json(result),LocalDateTime.now().toString(),id);
     }
     public void fail(String refId, Exception exception) {
         update(refId, RunStatus.FAILED.wire(), null, null, null, error(exception));
@@ -72,22 +68,20 @@ public class AgentRunService {
 
     /** 写入统一的调用上下文。 */
     public void context(String refId, AgentContext context) {
-        db.update("UPDATE agent_runs SET context_json=?, updated_at=? WHERE ref_id=?",
-                json(context), LocalDateTime.now().toString(), refId);
+        runs.saveContext(json(context), LocalDateTime.now().toString(), refId);
     }
 
     /** 写入统一结果，并把状态同步到 agent_runs.status。 */
     public void resolve(String refId, AgentResult result) {
-        db.update("UPDATE agent_runs SET resolution_json=?, status=COALESCE(?, status), error=?, updated_at=? WHERE ref_id=?",
-                json(result), result.status().wire(), result.error(), LocalDateTime.now().toString(), refId);
+        runs.saveResolution(json(result), result.status().wire(), result.error(), LocalDateTime.now().toString(), refId);
     }
 
     public Map<String, Object> byRef(String kind, String refId) {
-        return db.one("SELECT * FROM agent_runs WHERE kind=? AND ref_id=?", kind, refId).orElse(null);
+        return runs.findByRef(kind, refId).orElse(null);
     }
 
     public Map<String, Object> byId(String id) {
-        return db.one("SELECT * FROM agent_runs WHERE id=?", id).orElse(null);
+        return runs.findById(id).orElse(null);
     }
 
     /**
@@ -132,10 +126,7 @@ public class AgentRunService {
     }
 
     private void update(String refId, String status, String phase, String plan, String result, String error) {
-        db.update("UPDATE agent_runs SET status=COALESCE(?, status), phase=COALESCE(?, phase), " +
-                        "plan_json=COALESCE(?, plan_json), result_json=COALESCE(?, result_json), error=?, updated_at=? " +
-                        "WHERE ref_id=? AND status<>'cancelled'",
-                status, phase, plan, result, error, LocalDateTime.now().toString(), refId);
+        runs.updateState(status, phase, plan, result, error, LocalDateTime.now().toString(), refId);
     }
 
     private String json(Object value) {

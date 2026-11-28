@@ -1,7 +1,7 @@
 package com.activityassistant.api;
 
 import com.activityassistant.config.AppProperties;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.AccountAdministrationMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.service.AuditService;
 import com.activityassistant.service.AuthService;
@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
@@ -21,10 +20,10 @@ import static org.mockito.Mockito.*;
 
 class AuthControllerSecurityTest {
     private final AuthService auth = mock(AuthService.class);
-    private final Db db = mock(Db.class);
+    private final AccountAdministrationMapper accounts = mock(AccountAdministrationMapper.class);
     private final AppProperties properties = mock(AppProperties.class);
     private final AuthController controller = new AuthController(
-            auth, db, properties, mock(AuditService.class), mock(StorageService.class), new ObjectMapper());
+            auth, accounts, properties, mock(AuditService.class), mock(StorageService.class), new ObjectMapper());
 
     @Test
     void passwordChangeExpiresCookieAndRequiresReauthentication() {
@@ -44,7 +43,7 @@ class AuthControllerSecurityTest {
     void resetRejectsAnAccountOutsideTheAuthorizedSingleOrganization() {
         var manager = principal("manager-1", "manager");
         when(auth.organizationOf(manager.id())).thenReturn("org-a");
-        when(db.one(anyString(), any(Object[].class))).thenReturn(Optional.empty());
+        when(accounts.lockResetTarget("foreign-student", "org-a", manager.id())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> controller.resetPassword(
                 new UsernamePasswordAuthenticationToken(manager, "token"), "foreign-student",
@@ -58,14 +57,14 @@ class AuthControllerSecurityTest {
     void allowedResetRevokesSessionsThroughThePasswordService() {
         var manager = principal("manager-1", "manager");
         when(auth.organizationOf(manager.id())).thenReturn("org-a");
-        when(db.one(anyString(), any(Object[].class))).thenReturn(Optional.of(Map.of("allowed", 1)));
+        when(accounts.lockResetTarget("student-1", "org-a", manager.id())).thenReturn(Optional.of(1));
 
         var result = controller.resetPassword(new UsernamePasswordAuthenticationToken(manager, "token"), "student-1",
                 new ApiModels.PasswordResetRequest("reset-password"));
 
         assertThat(result).containsEntry("force_password_change", true);
         verify(auth).setPassword("student-1", "reset-password", true);
-        verify(db).one(contains("other_membership.organization_id<>om.organization_id"), eq("student-1"), eq("org-a"), eq(manager.id()));
+        verify(accounts).lockResetTarget("student-1", "org-a", manager.id());
     }
 
     @Test
@@ -77,7 +76,7 @@ class AuthControllerSecurityTest {
                 new ApiModels.PasswordResetRequest("reset-password")))
                 .isInstanceOf(ApiException.class).hasMessage("只有管理者可以重置成员密码");
 
-        verifyNoInteractions(db);
+        verifyNoInteractions(accounts);
         verify(auth, never()).setPassword(anyString(), anyString(), anyBoolean());
     }
 

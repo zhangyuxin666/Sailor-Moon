@@ -1,6 +1,6 @@
 package com.activityassistant.service;
 
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.TaskManagementMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.*;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -11,22 +11,19 @@ import java.util.*;
 
 @Service
 public class TaskManagementService {
-    private final Db db; private final ActivityGate gate;
-    public TaskManagementService(Db db,ActivityGate gate){this.db=db;this.gate=gate;}
+    private final TaskManagementMapper data; private final ActivityGate gate;
+    public TaskManagementService(TaskManagementMapper data,ActivityGate gate){this.data=data;this.gate=gate;}
     public List<Map<String,Object>> members(String activityId) {
-        return db.list("SELECT a.id AS account_id,a.display_name,a.username,a.student_no,COUNT(t.id) FILTER (WHERE t.status='pending' AND ev.status NOT IN ('cancelled','finished')) AS pending_count " +
-            "FROM activity_classes ac JOIN class_members cm ON cm.class_id=ac.class_id JOIN accounts a ON a.id=cm.account_id " +
-            "LEFT JOIN activity_task_assignees ata ON ata.account_id=a.id LEFT JOIN tasks t ON t.id=ata.task_id LEFT JOIN activities ev ON ev.id=t.activity_id " +
-            "WHERE ac.activity_id=? AND a.status='active' GROUP BY a.id,a.display_name,a.username,a.student_no ORDER BY pending_count,a.display_name,a.id",activityId);
+        return data.listMembers(activityId);
     }
     public Map<String,Object> view(String activityId,AccountPrincipal actor) {
-        Map<String,Object> a=db.one("SELECT * FROM activities WHERE id=?",activityId).orElseThrow(()->ApiException.notFound("活动不存在"));
+        Map<String,Object> a=data.findActivity(activityId).orElseThrow(()->ApiException.notFound("活动不存在"));
         if(!actor.isManager() || !actor.username().equals(a.get("user_id")))throw ApiException.forbidden("只能管理自己的活动任务");
         return Map.of("members",members(activityId),"tasks",tasks(activityId));
     }
     public List<Map<String,Object>> tasks(String activityId) {
-        List<Map<String,Object>> rows=db.list("SELECT t.*,ata.account_id,COALESCE(a.display_name,t.assignee) AS assignee FROM tasks t LEFT JOIN activity_task_assignees ata ON ata.task_id=t.id LEFT JOIN accounts a ON a.id=ata.account_id WHERE t.activity_id=? ORDER BY t.created_at,t.id",activityId);
-        for(var row:rows) row.put("depends_on",db.list("SELECT depends_on_id FROM task_dependencies WHERE task_id=? ORDER BY depends_on_id",row.get("id")).stream().map(r->r.get("depends_on_id")).toList());
+        List<Map<String,Object>> rows=data.listTasks(activityId);
+        for(var row:rows) row.put("depends_on",data.listDependencies(row.get("id")).stream().map(r->r.get("depends_on_id")).toList());
         return rows;
     }
     public static void validateTask(JsonNode task) {
@@ -57,7 +54,7 @@ public class TaskManagementService {
         Map<String,Object> payload=new LinkedHashMap<>();payload.put("task_id",taskId);payload.put("input",input);
         var oldResult=gate.replay(activityId,request,kind,payload);if(oldResult!=null)return oldResult;gate.active(activity);
         validateTask(input);
-        Map<String,Object> old=taskId==null?null:db.one("SELECT t.*,ata.account_id FROM tasks t LEFT JOIN activity_task_assignees ata ON ata.task_id=t.id WHERE t.id=? AND t.activity_id=?",taskId,activityId).orElseThrow(()->ApiException.notFound("任务不存在"));
+        Map<String,Object> old=taskId==null?null:data.findInActivity(taskId,activityId).orElseThrow(()->ApiException.notFound("任务不存在"));
         if(old!=null)gate.version(old,input.path("expected_version"));
         String account=input.path("account_id").asText(""),name="待分配",reason="尚未指定负责人";
         if(!account.isBlank()) {
@@ -78,16 +75,14 @@ public class TaskManagementService {
         String oldAccount=old==null || old.get("account_id")==null?"":String.valueOf(old.get("account_id"));
         String status=old==null || !oldAccount.equals(account)?"pending":String.valueOf(old.get("status"));
         if("done".equals(status) && !dependencies.isEmpty()) {
-            for(String d:dependencies)if(!"done".equals(db.required("SELECT status FROM tasks WHERE id=?",d).get("status")))throw ApiException.badRequest("已完成任务不能依赖未完成任务");
+            for(String d:dependencies)if(!"done".equals(data.findStatus(d).orElseThrow().get("status")))throw ApiException.badRequest("已完成任务不能依赖未完成任务");
         }
-        if(old==null)db.update("INSERT INTO tasks(id,activity_id,title,assignee,status,created_at,description,deadline,priority,unassigned_reason) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                id,activityId,input.path("title").asText().strip(),name,status,LocalDateTime.now().toString(),input.path("description").asText(""),deadline,input.path("priority").asText("normal"),reason);
-        else db.update("UPDATE tasks SET title=?,assignee=?,description=?,deadline=?,priority=?,status=?,unassigned_reason=?,version=version+1 WHERE id=?",
-                input.path("title").asText().strip(),name,input.path("description").asText(""),deadline,input.path("priority").asText("normal"),status,reason,id);
-        db.update("DELETE FROM activity_task_assignees WHERE task_id=?",id);
-        if(!account.isBlank())db.update("INSERT INTO activity_task_assignees(task_id,account_id) VALUES (?,?)",id,account);
-        db.update("DELETE FROM task_dependencies WHERE task_id=?",id);
-        for(String d:dependencies)db.update("INSERT INTO task_dependencies(task_id,depends_on_id) VALUES (?,?)",id,d);
+        if(old==null)data.insertTask(id,activityId,input.path("title").asText().strip(),name,status,LocalDateTime.now().toString(),input.path("description").asText(""),deadline,input.path("priority").asText("normal"),reason);
+        else data.updateTask(input.path("title").asText().strip(),name,input.path("description").asText(""),deadline,input.path("priority").asText("normal"),status,reason,id);
+        data.clearAssignees(id);
+        if(!account.isBlank())data.assign(id,account);
+        data.clearDependencies(id);
+        for(String d:dependencies)data.addDependency(id,d);
         Map<String,Object> result=new LinkedHashMap<>();result.put("task_id",id);result.put("version",old==null?1:((Number)old.get("version")).intValue()+1);result.put("previous_account_id",oldAccount);result.put("account_id",account);
         String content="【任务变更】"+activity.get("title")+"："+input.path("title").asText()+"，当前负责人："+name+(oldAccount.equals(account)?"":"；原负责人分配已结束，新分配从待完成开始。旧任务状态保留在变更记录中。");
         // Replay compares request data, while the persisted result carries the previous state for review.
@@ -97,17 +92,17 @@ public class TaskManagementService {
     @Transactional
     public Map<String,Object> status(String taskId,String status,AccountPrincipal actor) {
         if(!Set.of("pending","done").contains(status))throw ApiException.badRequest("任务状态无效");
-        Map<String,Object> ref=db.one("SELECT * FROM tasks WHERE id=?",taskId).orElseThrow(()->ApiException.notFound("任务不存在"));
+        Map<String,Object> ref=data.findTask(taskId).orElseThrow(()->ApiException.notFound("任务不存在"));
         String activityId=String.valueOf(ref.get("activity_id"));Map<String,Object> activity=gate.lock(activityId);
         if(actor.isManager()) {if(!actor.username().equals(activity.get("user_id")))throw ApiException.forbidden("只能管理自己的活动任务");}
-        else if(db.one("SELECT 1 FROM activity_task_assignees WHERE task_id=? AND account_id=?",taskId,actor.id()).isEmpty())throw ApiException.forbidden("该活动任务未分配给你");
+        else if(data.findAssignment(taskId,actor.id()).isEmpty())throw ApiException.forbidden("该活动任务未分配给你");
         gate.active(activity);
-        if("done".equals(status) && !db.list("SELECT t.id FROM task_dependencies d JOIN tasks t ON t.id=d.depends_on_id WHERE d.task_id=? AND t.status<>'done'",taskId).isEmpty())throw ApiException.badRequest("请先完成前置依赖任务");
-        if("pending".equals(status) && !db.list("SELECT t.id FROM task_dependencies d JOIN tasks t ON t.id=d.task_id WHERE d.depends_on_id=? AND t.status='done'",taskId).isEmpty())throw ApiException.badRequest("已有依赖此任务的已完成任务，请先撤回后续任务");
-        var current=db.required("SELECT * FROM tasks WHERE id=?",taskId);
+        if("done".equals(status) && !data.listUnfinishedPrerequisites(taskId).isEmpty())throw ApiException.badRequest("请先完成前置依赖任务");
+        if("pending".equals(status) && !data.listCompletedDependents(taskId).isEmpty())throw ApiException.badRequest("已有依赖此任务的已完成任务，请先撤回后续任务");
+        var current=data.findTask(taskId).orElseThrow();
         if(status.equals(current.get("status")))return current;
-        db.update("UPDATE tasks SET status=?,version=version+1 WHERE id=?",status,taskId);
+        data.updateStatus(status,taskId);
         gate.audit(activityId,actor.id(),"task.status","task",taskId,Map.of("from",String.valueOf(current.get("status")),"to",status));
-        return db.required("SELECT * FROM tasks WHERE id=?",taskId);
+        return data.findTask(taskId).orElseThrow();
     }
 }

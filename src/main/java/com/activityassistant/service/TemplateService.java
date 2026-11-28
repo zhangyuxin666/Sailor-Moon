@@ -1,6 +1,6 @@
 package com.activityassistant.service;
 
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.TemplateMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.ApiException;
 import com.activityassistant.support.Ids;
@@ -21,21 +21,21 @@ public class TemplateService {
     private static final Set<String> INTENTS=Set.of("activity","assignment","survey","notice");
     private static final Set<String> WORKFLOW=Set.of("create_plan","create_form","assign_tasks","create_calendar","schedule_reminder","publish_message","collect_submission");
     private static final Set<String> PRIORITIES=Set.of("low","normal","high","urgent");
-    private final Db db;
+    private final TemplateMapper templates;
     private final AuthService auth;
     private final ClassroomService classroom;
     private final ActivityGate gate;
     private final AuditService audits;
     private final ObjectMapper mapper;
 
-    public TemplateService(Db db,AuthService auth,ClassroomService classroom,ActivityGate gate,AuditService audits,ObjectMapper mapper){
-        this.db=db;this.auth=auth;this.classroom=classroom;this.gate=gate;this.audits=audits;this.mapper=mapper;
+    public TemplateService(TemplateMapper templates,AuthService auth,ClassroomService classroom,ActivityGate gate,AuditService audits,ObjectMapper mapper){
+        this.templates = templates;this.auth=auth;this.classroom=classroom;this.gate=gate;this.audits=audits;this.mapper=mapper;
     }
     private String organization(AccountPrincipal actor){
         if(!actor.isManager())throw ApiException.forbidden("只有管理者可以使用业务模板");
         String organization=auth.organizationOf(actor.id());
         if(organization==null)throw ApiException.forbidden("账号尚未加入组织");
-        String role=db.one("SELECT role FROM organization_members WHERE organization_id=? AND account_id=?",organization,actor.id())
+        String role=templates.findMembership(organization,actor.id())
                 .map(row->String.valueOf(row.get("role"))).orElse("");
         if(!Set.of("owner","manager").contains(role))throw ApiException.forbidden("只有当前组织的管理者可以使用业务模板");
         return organization;
@@ -150,29 +150,29 @@ public class TemplateService {
         var result=new LinkedHashMap<>(row);result.put("blueprint",gate.parse(result.remove("blueprint_json")));
         result.put("editable",actor.id().equals(result.remove("creator_id")));result.put("builtin",false);return result;
     }
-    public List<Map<String,Object>> list(AccountPrincipal actor){String organization=organization(actor);List<Map<String,Object>> result=new ArrayList<>(builtins());db.list("SELECT * FROM business_templates WHERE organization_id=? ORDER BY updated_at DESC,id LIMIT 200",organization).forEach(row->result.add(view(row,actor)));return result;}
-    public Map<String,Object> get(AccountPrincipal actor,String id){String organization=organization(actor);for(var builtin:builtins())if(id.equals(builtin.get("id")))return builtin;return view(db.one("SELECT * FROM business_templates WHERE id=? AND organization_id=?",id,organization).orElseThrow(()->ApiException.notFound("模板不存在")),actor);}
+    public List<Map<String,Object>> list(AccountPrincipal actor){String organization=organization(actor);List<Map<String,Object>> result=new ArrayList<>(builtins());templates.listTemplates(organization).forEach(row->result.add(view(row,actor)));return result;}
+    public Map<String,Object> get(AccountPrincipal actor,String id){String organization=organization(actor);for(var builtin:builtins())if(id.equals(builtin.get("id")))return builtin;return view(templates.findTemplate(id,organization).orElseThrow(()->ApiException.notFound("模板不存在")),actor);}
     /** Import choices have the same organization and creator scope as the import mutation. */
     public Map<String,Object> sources(AccountPrincipal actor){
         String organization=organization(actor);
         List<Map<String,Object>> drafts=new ArrayList<>();
-        for(var row:db.list("SELECT id,status,draft_json FROM agent_drafts WHERE organization_id=? AND creator_id=? ORDER BY updated_at DESC,id LIMIT 200",organization,actor.id())){
+        for(var row:templates.listSourceDrafts(organization,actor.id())){
             String title=gate.parse(row.get("draft_json")).path("title").asText("草案");
             drafts.add(Map.of("id",row.get("id"),"title",title,"status",row.get("status")));
         }
-        var activities=db.list("SELECT a.id,a.title,a.status FROM activities a JOIN activity_classes ac ON ac.activity_id=a.id WHERE ac.organization_id=? AND a.user_id=? ORDER BY a.created_at DESC,a.id LIMIT 200",organization,actor.username());
+        var activities=templates.listSourceActivities(organization,actor.username());
         return Map.of("drafts",drafts,"activities",activities);
     }
     private JsonNode source(AccountPrincipal actor,JsonNode input,String organization){
         boolean draft=input.hasNonNull("source_draft_id"),activity=input.hasNonNull("source_activity_id");
         if(draft&&activity||input.has("blueprint")&&(draft||activity))throw ApiException.badRequest("一次只能选择一种模板来源");
-        if(draft){String id=text(input.path("source_draft_id"),32,"草案编号",true);return gate.parse(db.one("SELECT draft_json FROM agent_drafts WHERE id=? AND organization_id=? AND creator_id=?",id,organization,actor.id()).orElseThrow(()->ApiException.notFound("来源草案不存在或不属于你")).get("draft_json"));}
-        if(activity){String id=text(input.path("source_activity_id"),32,"活动编号",true);gate.owner(id,actor);var scope=db.one("SELECT organization_id FROM activity_classes WHERE activity_id=?",id).orElseThrow(()->ApiException.notFound("来源活动没有组织"));if(!organization.equals(scope.get("organization_id")))throw ApiException.forbidden("不能复制其他组织的活动");
+        if(draft){String id=text(input.path("source_draft_id"),32,"草案编号",true);return gate.parse(templates.findSourceDraft(id,organization,actor.id()).orElseThrow(()->ApiException.notFound("来源草案不存在或不属于你")).get("draft_json"));}
+        if(activity){String id=text(input.path("source_activity_id"),32,"活动编号",true);gate.owner(id,actor);var scope=templates.findActivityScope(id).orElseThrow(()->ApiException.notFound("来源活动没有组织"));if(!organization.equals(scope.get("organization_id")))throw ApiException.forbidden("不能复制其他组织的活动");
             ObjectNode result=mapper.createObjectNode().put("intent_type","activity");
-            var plan=gate.parse(db.required("SELECT plan_json FROM activities WHERE id=?",id).get("plan_json"));result.set("form_fields",plan.path("form_fields"));
-            result.set("workflow",gate.parse(db.one("SELECT config_json FROM activity_workflows WHERE activity_id=?",id).map(row->row.get("config_json")).orElse("{}")));
+            var plan=gate.parse(Objects.requireNonNull(templates.findActivityPlan(id)).get("plan_json"));result.set("form_fields",plan.path("form_fields"));
+            result.set("workflow",gate.parse(templates.findWorkflow(id).map(row->row.get("config_json")).orElse("{}")));
             ObjectNode execution=result.putObject("execution_plan");execution.put("remind_minutes_before",plan.path("remind_minutes_before").asInt(60));ArrayNode tasks=execution.putArray("tasks");
-            for(var task:db.list("SELECT id,title,priority FROM tasks WHERE activity_id=? ORDER BY id",id)){ObjectNode node=mapper.valueToTree(task);ArrayNode deps=node.putArray("depends_on");db.list("SELECT depends_on_id FROM task_dependencies WHERE task_id=? ORDER BY depends_on_id",task.get("id")).forEach(row->deps.add(String.valueOf(row.get("depends_on_id"))));tasks.add(node);}
+            for(var task:templates.listSourceTasks(id)){ObjectNode node=mapper.valueToTree(task);ArrayNode deps=node.putArray("depends_on");templates.listDependencies(task.get("id")).forEach(row->deps.add(String.valueOf(row.get("depends_on_id"))));tasks.add(node);}
             return result;
         }
         if(!input.path("blueprint").isObject())throw ApiException.badRequest("请提供模板蓝图或已授权来源");return input.path("blueprint");
@@ -181,20 +181,20 @@ public class TemplateService {
     public Map<String,Object> create(AccountPrincipal actor,JsonNode input){
         String organization=organization(actor),name=text(input.path("name"),120,"模板名称",true),description=text(input.path("description"),1000,"模板简介",false);
         JsonNode raw=source(actor,input,organization);boolean fromRecord=input.hasNonNull("source_draft_id")||input.hasNonNull("source_activity_id");ObjectNode blueprint=portable(raw,mapper,fromRecord,name);
-        String id=Ids.shortId(),now=LocalDateTime.now().toString();db.update("INSERT INTO business_templates(id,organization_id,creator_id,name,description,blueprint_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",id,organization,actor.id(),name,description,gate.json(blueprint),now,now);
+        String id=Ids.shortId(),now=LocalDateTime.now().toString();templates.insertTemplate(id,organization,actor.id(),name,description,gate.json(blueprint),now,now);
         audits.write("template.create",actor.id(),organization,"template",id,Map.of("structure_only",fromRecord));return get(actor,id);
     }
     @Transactional
-    public Map<String,Object> update(AccountPrincipal actor,String id,JsonNode input){String organization=organization(actor);if(id.startsWith("builtin-"))throw ApiException.forbidden("内置模板只读，可另存为自己的模板");var row=db.one("SELECT * FROM business_templates WHERE id=? AND organization_id=? FOR UPDATE",id,organization).orElseThrow(()->ApiException.notFound("模板不存在"));if(!actor.id().equals(row.get("creator_id")))throw ApiException.forbidden("只能修改自己创建的模板");gate.version(row,input.path("expected_version"));String name=text(input.path("name"),120,"模板名称",true),description=text(input.path("description"),1000,"模板简介",false);ObjectNode blueprint=portable(input.path("blueprint"),mapper,false,name);db.update("UPDATE business_templates SET name=?,description=?,blueprint_json=?,version=version+1,updated_at=? WHERE id=?",name,description,gate.json(blueprint),LocalDateTime.now().toString(),id);audits.write("template.update",actor.id(),organization,"template",id,null);return get(actor,id);}
+    public Map<String,Object> update(AccountPrincipal actor,String id,JsonNode input){String organization=organization(actor);if(id.startsWith("builtin-"))throw ApiException.forbidden("内置模板只读，可另存为自己的模板");var row=templates.lockTemplate(id,organization).orElseThrow(()->ApiException.notFound("模板不存在"));if(!actor.id().equals(row.get("creator_id")))throw ApiException.forbidden("只能修改自己创建的模板");gate.version(row,input.path("expected_version"));String name=text(input.path("name"),120,"模板名称",true),description=text(input.path("description"),1000,"模板简介",false);ObjectNode blueprint=portable(input.path("blueprint"),mapper,false,name);templates.updateTemplate(name,description,gate.json(blueprint),LocalDateTime.now().toString(),id);audits.write("template.update",actor.id(),organization,"template",id,null);return get(actor,id);}
     @Transactional
-    public Map<String,Object> delete(AccountPrincipal actor,String id,int version){String organization=organization(actor);if(id.startsWith("builtin-"))throw ApiException.forbidden("内置模板只读");var row=db.one("SELECT * FROM business_templates WHERE id=? AND organization_id=? FOR UPDATE",id,organization).orElseThrow(()->ApiException.notFound("模板不存在"));if(!actor.id().equals(row.get("creator_id")))throw ApiException.forbidden("只能删除自己创建的模板");if(((Number)row.get("version")).intValue()!=version)throw new ApiException(HttpStatus.CONFLICT,"模板已更新，请刷新后重试");db.update("DELETE FROM business_templates WHERE id=?",id);audits.write("template.delete",actor.id(),organization,"template",id,null);return Map.of("status","deleted");}
-    private Map<String,Object> replay(AccountPrincipal actor,String request,String hash){var old=db.one("SELECT * FROM template_applications WHERE account_id=? AND request_id=?",actor.id(),request).orElse(null);if(old==null)return null;if(!hash.equals(old.get("payload_hash")))throw new ApiException(HttpStatus.CONFLICT,"该请求标识已用于另一模板或班级");return Map.of("draft_id",old.get("draft_id"),"status","draft","idempotent",true);}
+    public Map<String,Object> delete(AccountPrincipal actor,String id,int version){String organization=organization(actor);if(id.startsWith("builtin-"))throw ApiException.forbidden("内置模板只读");var row=templates.lockTemplate(id,organization).orElseThrow(()->ApiException.notFound("模板不存在"));if(!actor.id().equals(row.get("creator_id")))throw ApiException.forbidden("只能删除自己创建的模板");if(((Number)row.get("version")).intValue()!=version)throw new ApiException(HttpStatus.CONFLICT,"模板已更新，请刷新后重试");templates.deleteTemplate(id);audits.write("template.delete",actor.id(),organization,"template",id,null);return Map.of("status","deleted");}
+    private Map<String,Object> replay(AccountPrincipal actor,String request,String hash){var old=templates.findApplication(actor.id(),request).orElse(null);if(old==null)return null;if(!hash.equals(old.get("payload_hash")))throw new ApiException(HttpStatus.CONFLICT,"该请求标识已用于另一模板或班级");return Map.of("draft_id",old.get("draft_id"),"status","draft","idempotent",true);}
     @Transactional
     public Map<String,Object> apply(AccountPrincipal actor,String id,JsonNode input){String organization=organization(actor),classId=text(input.path("class_id"),32,"班级编号",true),request=input.path("request_id").asText();gate.requestId(request);var target=classroom.requireClassManager(classId,actor);if(!organization.equals(target.get("organization_id")))throw ApiException.forbidden("模板只能应用到当前组织的班级");String hash=ActivityGate.hash(id+"\n"+classId);var old=replay(actor,request,hash);if(old!=null)return old;
-        var template=get(actor,id);ObjectNode blueprint=portable((JsonNode)template.get("blueprint"),mapper,false,null);String draftId=Ids.shortId(),now=LocalDateTime.now().toString();int inserted=db.update("INSERT INTO template_applications(account_id,request_id,template_id,class_id,payload_hash,draft_id,created_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",actor.id(),request,id,classId,hash,draftId,now);if(inserted==0)return Objects.requireNonNull(replay(actor,request,hash));
+        var template=get(actor,id);ObjectNode blueprint=portable((JsonNode)template.get("blueprint"),mapper,false,null);String draftId=Ids.shortId(),now=LocalDateTime.now().toString();int inserted=templates.insertApplication(actor.id(),request,id,classId,hash,draftId,now);if(inserted==0)return Objects.requireNonNull(replay(actor,request,hash));
         ObjectNode generation=blueprint.putObject("generation");generation.put("mode","offline").put("fallback_reason","template").put("retrieval_status","empty");generation.putArray("sources");ArrayNode pending=generation.putArray("pending_fields");String intent=blueprint.path("intent_type").asText();if(intent.equals("activity"))pending.add("event_time");if(intent.equals("assignment"))pending.add("deadline");
         if(Set.of("activity","survey").contains(intent))blueprint.set("execution_plan",ConfirmedPlans.fromDraft(blueprint,mapper));
-        db.update("INSERT INTO agent_drafts(id,organization_id,class_id,creator_id,raw_input,intent_type,complexity,draft_json,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,'draft',?,?)",draftId,organization,classId,actor.id(),"从业务模板创建，请确认当前日期和负责人后发布。",intent,blueprint.path("complexity").asText(),gate.json(blueprint),now,now);
+        templates.insertDraft(draftId,organization,classId,actor.id(),"从业务模板创建，请确认当前日期和负责人后发布。",intent,blueprint.path("complexity").asText(),gate.json(blueprint),now,now);
         audits.write("template.apply",actor.id(),organization,"agent_draft",draftId,Map.of("template_id",id,"template_version",template.get("version")));return Map.of("draft_id",draftId,"status","draft","idempotent",false);
     }
 }

@@ -42,6 +42,13 @@ public class AiClient {
         return post("/internal/ai/recap",Map.of("activity_title","活动统计","stats",aggregates,"task_summary","","organization_id",""));
     }
     public JsonNode embeddingResult(String text){return post("/internal/ai/embed",Map.of("text",text));}
+    /** Split a document and generate one embedding for every chunk. */
+    public JsonNode chunkEmbed(String content, int chunkSize, int overlap) {
+        return post("/internal/ai/chunk-embed", Map.of(
+                "content", content,
+                "chunk_size", chunkSize,
+                "overlap", overlap));
+    }
     public String reply(String message, String activityContext, String organizationId) {
         JsonNode response = post("/internal/ai/reply", Map.of(
                 "message", message, "activity_context", activityContext,

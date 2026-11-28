@@ -1,0 +1,10 @@
+/* 实时推送状态徽标 */
+.analytics-live { display:inline-flex; align-items:center; gap:5px; padding:4px 9px; font-size:11px; border-radius:3px; border:1px solid #b98a51; background:#f7e5bd; color:#704727; }
+.analytics-live::before { content:''; width:7px; height:7px; border-radius:50%; background:#b0a084; }
+.analytics-live.live { border-color:#6f8f4a; background:#e6f0d3; color:#41611f; }
+.analytics-live.live::before { background:#5f9c37; box-shadow:0 0 0 3px rgba(95,156,55,.18); }
+.analytics-live.offline { border-color:#b47a4a; background:#f6dfc9; color:#7a4a22; }
+.analytics-live.offline::before { background:#b4713d; }
+
+/* 通知面板右上角的“实时状态 + 刷新”组合 */
+.notification-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }

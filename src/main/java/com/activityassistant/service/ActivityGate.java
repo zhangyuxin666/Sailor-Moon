@@ -1,7 +1,7 @@
 package com.activityassistant.service;
 
 import com.activityassistant.config.AppProperties;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.ActivityGateMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.*;
 import com.fasterxml.jackson.databind.*;
@@ -17,13 +17,13 @@ import java.util.function.Supplier;
 /** All management mutations and workflow steps acquire the activity row first. */
 @Service
 public class ActivityGate {
-    private final Db db; private final ObjectMapper mapper; private final AppProperties properties;
+    private final ActivityGateMapper activities; private final ObjectMapper mapper; private final AppProperties properties;
     private final AuditService audits; private final BackgroundJobService jobs;
-    public ActivityGate(Db db,ObjectMapper mapper,AppProperties properties,AuditService audits,BackgroundJobService jobs) {
-        this.db=db;this.mapper=mapper;this.properties=properties;this.audits=audits;this.jobs=jobs;
+    public ActivityGate(ActivityGateMapper activities,ObjectMapper mapper,AppProperties properties,AuditService audits,BackgroundJobService jobs) {
+        this.activities=activities;this.mapper=mapper;this.properties=properties;this.audits=audits;this.jobs=jobs;
     }
     public Map<String,Object> lock(String id) {
-        return db.one("SELECT * FROM activities WHERE id=? FOR UPDATE",id).orElseThrow(()->ApiException.notFound("活动不存在"));
+        return activities.lockActivity(id).orElseThrow(()->ApiException.notFound("活动不存在"));
     }
     public Map<String,Object> owner(String id,AccountPrincipal actor) {
         Map<String,Object> activity=lock(id);
@@ -35,23 +35,23 @@ public class ActivityGate {
     }
     @Transactional
     public <T> T during(String id,boolean allowCancelled,Supplier<T> operation) {
-        JobLease.verify(db);
+        JobLease.verify();
         Map<String,Object> activity=lock(id);
         if (!allowCancelled && "cancelled".equals(activity.get("status"))) throw new CancelledFlow();
-        JobLease.verify(db);
+        JobLease.verify();
         T result=operation.get();
-        JobLease.verify(db);
+        JobLease.verify();
         return result;
     }
     @Transactional
     public <T> T settle(String id,Supplier<T> operation) {
-        lock(id);JobLease.verify(db);return operation.get();
+        lock(id);JobLease.verify();return operation.get();
     }
     @Transactional
     public <T> T todoDuring(String id,Supplier<T> operation) {
-        JobLease.verify(db);
-        db.required("SELECT id FROM todos WHERE id=? FOR UPDATE",id);
-        JobLease.verify(db);T result=operation.get();JobLease.verify(db);return result;
+        JobLease.verify();
+        activities.lockTodo(id).orElseThrow();
+        JobLease.verify();T result=operation.get();JobLease.verify();return result;
     }
     public static final class CancelledFlow extends RuntimeException {}
     public JsonNode tree(Object value){return mapper.valueToTree(value);}
@@ -84,7 +84,7 @@ public class ActivityGate {
     }
     public Map<String,Object> replay(String activityId,String requestId,String kind,Object payload) {
         requestId(requestId);
-        Map<String,Object> old=db.one("SELECT * FROM activity_changes WHERE activity_id=? AND request_id=?",activityId,requestId).orElse(null);
+        Map<String,Object> old=activities.findChange(activityId,requestId).orElse(null);
         if(old==null)return null;
         if(!kind.equals(old.get("kind")) || !parse(old.get("payload_json")).equals(mapper.valueToTree(payload)))
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,"该请求标识已用于不同内容");
@@ -95,22 +95,20 @@ public class ActivityGate {
             Map<String,Object> result,String content,Collection<String> recipients) {
         String id=Ids.shortId(),now=LocalDateTime.now().toString();
         Map<String,Object> response=new LinkedHashMap<>(result);response.put("change_id",id);
-        db.update("INSERT INTO activity_changes(id,activity_id,request_id,kind,actor_id,payload_json,result_json,content,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                id,activityId,requestId,kind,actor.id(),json(payload),json(response),content,now);
+        activities.insertChange(id,activityId,requestId,kind,actor.id(),json(payload),json(response),content,now);
         for(String accountId:new LinkedHashSet<>(recipients)) {
-            if(accountId!=null && !accountId.isBlank()) db.update("INSERT INTO messages(activity_id,recipient,recipient_account_id,content,created_at) VALUES (?,?,?,?,?)",
-                    activityId,accountId,accountId,content,now);
+            if(accountId!=null && !accountId.isBlank()) activities.insertMessage(activityId,accountId,accountId,content,now);
         }
-        String org=db.one("SELECT organization_id FROM activity_classes WHERE activity_id=?",activityId).map(r->String.valueOf(r.get("organization_id"))).orElse(null);
+        String org=activities.findOrganization(activityId).map(r->String.valueOf(r.get("organization_id"))).orElse(null);
         audits.write("activity."+kind,actor.id(),org,"activity",activityId,Map.of("change_id",id));
         jobs.enqueue("activity_change",id);return response;
     }
     public void audit(String activityId,String actorId,String action,String type,String resourceId,Map<String,?> detail) {
-        String org=db.one("SELECT organization_id FROM activity_classes WHERE activity_id=?",activityId).map(r->String.valueOf(r.get("organization_id"))).orElse(null);
+        String org=activities.findOrganization(activityId).map(r->String.valueOf(r.get("organization_id"))).orElse(null);
         audits.write(action,actorId,org,type,resourceId,detail);
     }
     public List<String> participants(String activityId) {
-        return db.list("SELECT cm.account_id FROM class_members cm JOIN activity_classes ac ON ac.class_id=cm.class_id WHERE ac.activity_id=?",activityId)
+        return activities.listParticipants(activityId)
             .stream().map(r->String.valueOf(r.get("account_id"))).toList();
     }
 }

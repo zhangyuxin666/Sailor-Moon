@@ -280,3 +280,31 @@ input::file-selector-button { border: 2px solid #af7a42; color: #6d4328; backgro
   .policy-page h1 { font-size: 24px; }
   .agent-hero h1 { font-size: 24px; }
 }
+
+/* ---- 活动详情页：指标条 + 折叠面板（减少首屏信息密度） ---- */
+.activity-metrics { margin-bottom: 12px; }
+.activity-metrics .ws-metric span { font-size: 12px; color: #7b5b3a; }
+.activity-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 14px; }
+
+.ws-fold { padding: 0 !important; overflow: hidden; }
+.ws-fold > summary {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  cursor: pointer; list-style: none;
+  padding: 14px 18px;
+  background: linear-gradient(#f7e8c6, #efdcb2);
+  font-weight: 700;
+}
+.ws-fold > summary::-webkit-details-marker { display: none; }
+.ws-fold > summary::before {
+  content: '▸'; color: #7b4a21; display: inline-block;
+  transition: transform .15s ease;
+}
+.ws-fold[open] > summary::before { transform: rotate(90deg); }
+.ws-fold > summary span { font-weight: 500; font-size: 12px; color: #7b5b3a; }
+.ws-fold[open] > summary { border-bottom: 2px solid #b07a3f; }
+
+.fold-body { padding: 16px 18px; display: grid; gap: 16px; }
+.fold-section { display: grid; gap: 12px; }
+.fold-section + .fold-section { border-top: 1px dashed rgba(123, 74, 33, .35); padding-top: 14px; }
+.fold-section h3 { margin: 0; font-size: 15px; }
+.activity-raw { font-size: 12px; opacity: .72; margin-top: 4px; }

@@ -2,9 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // Vite 配置：base 设为 '/' 保证子路径下资源使用绝对路径；
-// dev 服务器代理 /auth、/portal、/agent、/todos、/classes、/activities、/forms、
-// /public、/integrations、/audit-logs、/accounts、/reminders、/tasks、/health、/static、
-// /analytics 到后端 Spring Boot（默认 :8080，可用 API_TARGET 覆盖），实现同源会话 cookie。
+// dev 服务器把 /auth、/portal、/agent、/todos、/classes、/activities、/forms、
+// /public、/analytics 等前缀代理到后端 Spring Boot（默认 :8080，可用 API_TARGET 覆盖），
+// 从而保持同源会话 cookie。
 const target = process.env.API_TARGET || 'http://127.0.0.1:8080';
 
 export default defineConfig({
@@ -16,6 +16,8 @@ export default defineConfig({
       '/participation/activities': target,
       '/business-templates': target,
       '/analytics': target,
+      '/behavior': target,
+      '/me/favorites': target,
       '/notifications': target,
       '/runs': target,
       '/knowledge/': target,

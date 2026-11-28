@@ -1,6 +1,6 @@
 package com.activityassistant.service;
 
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.ActivityGateMapper;
 import com.activityassistant.support.ApiException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -53,8 +53,8 @@ class ManagementRulesTest {
         assertThat(value).doesNotContain("UID:activity@sailor-moon");
     }
     @Test void cancelledGatePreventsTheNextStepButPermitsExplicitCancellationNotice() {
-        Db db=mock(Db.class);when(db.one("SELECT * FROM activities WHERE id=? FOR UPDATE","a")).thenReturn(Optional.of(Map.of("status","cancelled")));
-        ActivityGate gate=new ActivityGate(db,mapper,null,null,null);AtomicBoolean called=new AtomicBoolean();
+        ActivityGateMapper gateMapper=mock(ActivityGateMapper.class);when(gateMapper.lockActivity("a")).thenReturn(Optional.of(Map.of("status","cancelled")));
+        ActivityGate gate=new ActivityGate(gateMapper,mapper,null,null,null);AtomicBoolean called=new AtomicBoolean();
         assertThatThrownBy(()->gate.during("a",false,()->{called.set(true);return null;})).isInstanceOf(ActivityGate.CancelledFlow.class);
         assertThat(called).isFalse();gate.during("a",true,()->{called.set(true);return null;});assertThat(called).isTrue();
     }

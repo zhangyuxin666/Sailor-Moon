@@ -52,8 +52,8 @@ export default function ActivityManagement({ id, detail, stats, onChanged }: { i
   async function reschedule(event:FormEvent){event.preventDefault();await mutate('reschedule',`/activities/${id}/reschedule`,{event_time:localToISO(eventTime),reason,expected_version:detail.activity.version,deadline_policy:deadlinePolicy,registration_deadline:deadlinePolicy==='set'?localToISO(newDeadline):''});}
   async function retry(change:Change){if(inFlight.current)return;inFlight.current=true;setBusy(change.id);setError('');try{await api(`/activities/${id}/changes/${change.id}/retry`,{method:'POST'});reloadHistory();}catch(e){setError(e instanceof Error?e.message:'重试失败');}finally{inFlight.current=false;setBusy('');}}
   return <>
-    <section className="ws-panel wide" aria-label="活动管理">
-      <div className="ws-panel-title"><div><h2>活动管理</h2><p>取消、改期和报名规则均记录变更；已完成的操作保留。</p></div></div>
+    <section className="fold-section" aria-label="活动管理">
+      <div className="ws-panel-title"><div><h3>报名规则与改期</h3><p>取消、改期和报名规则均记录变更；已完成的操作保留。</p></div></div>
       {error&&<p className="auth-error" role="alert">{error}</p>}{success&&<p role="status">{success}</p>}
       {cancelled&&<p className="reason-box">活动已取消：{detail.activity.cancel_reason||'见变更记录'}。已完成与已发送记录仍可查看。</p>}
       <div className="ws-grid">
@@ -77,8 +77,8 @@ export default function ActivityManagement({ id, detail, stats, onChanged }: { i
         </fieldset></form><p>改期仅用于已就绪活动；旧提醒失效，日历 UID 保持不变并增加版本。群通知失败可从变更记录重试。</p></section>
       </div>
     </section>
-    <details className="ws-panel wide" aria-label="任务管理">
-      <summary>管理分工{detail.tasks?.length ? `（${detail.tasks.length} 项）` : '（可选）'}</summary>
+    <details className="fold-section ws-fold" aria-label="任务管理">
+      <summary><strong>管理分工</strong><span>{detail.tasks?.length ? `${detail.tasks.length} 项任务` : '可选'}</span></summary>
       <div className="ws-panel-title"><div><p>可手动添加任务或调整负责人。</p></div><div className="ws-actions"><button className="ws-button light" type="button" onClick={reloadPeople} disabled={!!busy}>刷新候选负载</button><button className="ws-button light" type="button" onClick={()=>edit(null)} disabled={!!busy||closed}>新建任务</button></div></div>
       <DataState loading={peopleLoading} error={peopleError} onRetry={reloadPeople}/>
       <div className="ws-list">{(detail.tasks??[]).map(task=><div className="ws-list-item" key={task.id}><span className={'ws-tag '+(!task.account_id?'amber':'')}>{task.account_id?task.assignee:'待分配'}</span><span style={{flex:1}}><strong>{task.title}</strong><small>{priorities[task.priority??'normal']}优先级 · {task.deadline?formatDate(task.deadline):'无截止时间'}</small>{task.description&&<small>{task.description}</small>}{task.unassigned_reason&&<small>{task.unassigned_reason}</small>}{task.account_id&&<small>负责人账号：{members.find(m=>m.account_id===task.account_id)?.username??task.account_id}</small>}<small>前置任务：{task.depends_on?.map(dep=>detail.tasks?.find(t=>t.id===dep)?.title??dep).join('、')||'无'}</small></span><button className="ws-button light" type="button" disabled={!!busy||closed} onClick={()=>edit(task)}>编辑任务：{task.title}</button></div>)}</div>
@@ -92,7 +92,7 @@ export default function ActivityManagement({ id, detail, stats, onChanged }: { i
         <button className="ws-button" type="submit">{editing?'保存任务变更':'创建任务'}</button>
       </fieldset></form>
     </details>
-    <section className="ws-panel wide" aria-label="活动变更记录"><div className="ws-panel-title"><div><h2>活动变更记录</h2><p>站内通知按账号发送，群通知只使用当前授权群。</p></div><button className="ws-button light" type="button" onClick={reloadHistory}>刷新变更记录</button></div>
+    <section className="fold-section" aria-label="活动变更记录"><div className="ws-panel-title"><div><h3>活动变更记录</h3><p>站内通知按账号发送，群通知只使用当前授权群。</p></div><button className="ws-button light" type="button" onClick={reloadHistory}>刷新变更记录</button></div>
       <DataState loading={historyLoading} error={historyError} onRetry={reloadHistory} empty={!historyLoading&&!historyError&&!history?.changes.length} emptyText="暂无管理变更"/>
       <div className="ws-list">{history?.changes.map(change=><article className="ws-list-item" key={change.id}><span style={{flex:1}}><strong>{change.content}</strong><small>{formatDate(change.created_at)} · {noticeStates[change.notification_status]??change.notification_status}</small>{change.result?.previous&&<small>原负责人：{change.result.previous.assignee}；原状态：{change.result.previous.status==='done'?'已完成':'待完成'}</small>}{change.error&&<small role="alert">{change.error}</small>}</span>{change.notification_status==='failed'&&<button className="ws-button light" type="button" disabled={!!busy} onClick={()=>retry(change)}>重试变更通知</button>}</article>)}</div>
     </section>

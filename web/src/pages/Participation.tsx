@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useActivityBehavior } from '../lib/activity-behavior';
+import ActivityReactions from '../components/ActivityReactions';
 import { useSearchParams } from 'react-router-dom';
 import { api, useApi } from '../lib/api';
 import { formatDate } from '../lib/utils';
@@ -168,6 +170,9 @@ export default function Participation() {
     if (!selectedId && data?.activities.length) setSelectedId(data.activities[0].id);
   }, [data, selectedId]);
 
+  useActivityBehavior(data?.activities.some(activity => activity.id === selectedId)
+    ? selectedId ?? undefined : undefined);
+
   function choose(id: string) {
     if (detailBusy || selectedId === id) return;
     if (detailDirty && !window.confirm('切换活动会放弃尚未提交的反馈修改，确认继续？')) return;
@@ -178,6 +183,8 @@ export default function Participation() {
   return (
     <>
       <header className="ws-header"><div><p className="ws-kicker">PARTICIPATION</p><h1>活动签到与反馈</h1><p>这里只显示当前账号有权参与的活动，签到和反馈均记录到本人账号。</p></div></header>
+      {selectedId && activities.some(activity => activity.id === selectedId) &&
+        <ActivityReactions key={selectedId} activityId={selectedId} />}
       <div className="ws-grid">
         <section className="ws-panel" aria-label="可参与活动">
           <div className="ws-panel-title"><h2>我的活动</h2><button className="ws-button light" type="button" disabled={loading || detailBusy} onClick={reload}>刷新我的活动</button></div>

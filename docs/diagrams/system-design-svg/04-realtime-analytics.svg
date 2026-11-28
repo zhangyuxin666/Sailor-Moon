@@ -1,0 +1,49 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#555"/></marker><filter id="shadow"><feDropShadow dx="2" dy="3" stdDeviation="2" flood-opacity="0.18"/></filter></defs>
+<rect width="1400" height="850" fill="#FAFCF7"/><rect x="20" y="18" width="1360" height="82" rx="14" fill="#48693A"/>
+<text x="700" y="52" text-anchor="middle" font-family="Microsoft YaHei" font-size="28" font-weight="bold" fill="white">数据大屏实时更新时序</text>
+<text x="700" y="80" text-anchor="middle" font-family="Microsoft YaHei" font-size="15" fill="#E9F2E4">PostgreSQL通知 → RabbitMQ扇出 → SSE；断线时轮询降级</text>
+<line x1="125" y1="245" x2="340" y2="245" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="340" y1="245" x2="560" y2="245" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="560" y1="245" x2="795" y2="245" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="795" y1="245" x2="1025" y2="180" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="795" y1="245" x2="1025" y2="320" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="1025" y1="180" x2="1255" y2="255" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="1025" y1="320" x2="1255" y2="255" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="1255" y1="255" x2="1005" y2="545" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="1005" y1="545" x2="705" y2="545" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="705" y1="545" x2="425" y2="545" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="425" y1="545" x2="175" y2="717.5" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="300" y="624.25" text-anchor="middle" font-family="Microsoft YaHei" font-size="12" fill="#555">onerror</text>
+<rect x="30" y="200" width="190" height="90" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="125" y="234" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">业务表写入</text>
+<text x="125" y="258" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">活动/任务/报名</text>
+<rect x="250" y="200" width="180" height="90" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="340" y="234" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">V13触发器</text>
+<text x="340" y="258" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">pg_notify</text>
+<rect x="460" y="200" width="200" height="90" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="560" y="234" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">AnalyticsNotifier</text>
+<text x="560" y="258" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">JDBC LISTEN</text>
+<rect x="700" y="200" width="190" height="90" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="795" y="234" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">RabbitMQ</text>
+<text x="795" y="258" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">activity.events</text>
+<rect x="930" y="140" width="190" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="1025" y="180" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">API实例A消费者</text>
+<rect x="930" y="280" width="190" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="1025" y="320" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">API实例B消费者</text>
+<rect x="1150" y="210" width="210" height="90" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="1255" y="244" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">requestBroadcast</text>
+<text x="1255" y="268" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">300ms防抖</text>
+<rect x="900" y="500" width="210" height="90" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="1005" y="534" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">AnalyticsService</text>
+<text x="1005" y="558" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">统计快照SQL</text>
+<rect x="610" y="500" width="190" height="90" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="705" y="534" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">SseEmitter</text>
+<text x="705" y="558" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">snapshot + ping</text>
+<rect x="320" y="500" width="210" height="90" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="425" y="534" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">React数据大屏</text>
+<text x="425" y="558" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">setData重新渲染</text>
+<rect x="40" y="680" width="270" height="75" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="175" y="706.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">断线降级</text>
+<text x="175" y="730.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">15秒轮询，重连停止</text>
+</svg>

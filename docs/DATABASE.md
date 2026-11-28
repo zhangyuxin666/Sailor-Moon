@@ -58,4 +58,4 @@ FROM flyway_schema_history ORDER BY installed_rank;
 
 启用 `compose.replication.yml` 后，`postgres` 是唯一写入主库，`postgres-replica` 是 PostgreSQL 16 物理流复制从库，分别使用 `postgres_data` 和 `postgres_replica_data`。`activity_replicator` 仅承担复制；`activity_reader` 仅有 public 表的 SELECT 权限，后续主账号创建的表也自动授予 SELECT。Flyway 只连接主库。复制槽限制 WAL 保留为 1GB，过期从库需要以新空卷重建，不能覆盖主库卷。
 
-应用仅对审查后的 `Db.readList` 路径使用从库；以主库 WAL 位置检查从库同步进度，落后/失效则回主库。事务、权限、报名名额、复盘快照和一致性导出仍在主库完成。启动、权限验证、复制状态及备份恢复注意事项见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。
+应用仅对审查后的 `ReplicaReads.readMapper` 路径使用从库；以主库 WAL 位置检查从库同步进度，落后/失效则回主库。事务、权限、报名名额、复盘快照和一致性导出仍在主库完成。启动、权限验证、复制状态及备份恢复注意事项见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。

@@ -1,118 +1,155 @@
-html, body, #root {
-  height: 100%;
+/* 工作台总览：桌面双栏，窄屏按阅读顺序单栏排列。 */
+.portal-screen {
+  min-width: 0;
 }
 
-/* ===== 一屏布局：工作台内所有页面不产生整页滚动 ===== */
-.ws-shell {
-  height: 100vh;
-  min-height: 0;
-  overflow: hidden;
+.portal-screen > .ws-header {
+  margin-bottom: 16px;
 }
 
-.ws-main {
-  height: 100vh;
-  max-height: 100vh;
-  padding: clamp(14px, 2.2vh, 26px) 0 clamp(10px, 1.6vh, 18px);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.ws-main > * {
-  min-height: 0;
-}
-
-.valley-workspace-bar {
-  flex: 0 0 auto;
-  margin-bottom: clamp(8px, 1.4vh, 14px);
-}
-
-.ws-header {
-  flex: 0 0 auto;
-  margin-bottom: clamp(10px, 1.6vh, 16px);
-  padding-bottom: clamp(8px, 1.2vh, 12px);
-}
-
-.ws-header h1 {
-  font-size: clamp(20px, 2.4vw, 30px);
-  line-height: 1.25;
-}
-
-.ws-header p:not(.ws-kicker) {
-  font-size: clamp(11px, 1.1vw, 13px);
-  margin: 2px 0 0;
-}
-
-.ws-metrics {
-  flex: 0 0 auto;
-  margin-bottom: clamp(10px, 1.6vh, 16px);
+.portal-screen > .ws-metrics {
+  margin-bottom: 16px;
   gap: 12px;
 }
 
-.ws-metric {
+.portal-screen > .ws-metrics .ws-metric {
   min-height: 0;
-  padding: clamp(8px, 1.4vh, 14px) 14px;
+  padding: 12px 14px;
 }
 
-.ws-metric strong {
-  font-size: clamp(20px, 2.2vw, 28px);
-  line-height: 1.15;
-}
-
-.ws-grid {
-  flex: 1 1 auto;
-  min-height: 0;
+.portal-columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(10px, 1.6vw, 16px);
-  margin-bottom: 0;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
 }
 
-.ws-panel {
+.portal-primary,
+.portal-secondary {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.portal-columns .ws-panel {
+  min-width: 0;
   margin-bottom: 0;
-  padding: clamp(10px, 1.6vh, 16px) clamp(12px, 1.4vw, 18px);
+  overflow-wrap: anywhere;
+}
+
+.portal-secondary .ws-list {
+  max-height: 18rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.portal-secondary .ws-panel-title {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 1000px) {
+  .portal-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ===== 登录页（账号界面）：整屏一页，不出现滚动条 ===== */
+.valley-screen-account {
+  height: 100svh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px 18px;
+}
+
+.valley-screen-account .valley-stage-content {
+  height: 100%;
+  max-height: 100%;
+  padding: 34px 22px 12px;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  gap: 8px;
   overflow: hidden;
 }
 
-.ws-panel-title {
-  flex: 0 0 auto;
-  margin-bottom: 8px;
+.valley-screen-account .valley-page-back {
+  position: absolute;
+  left: 12px;
+  top: 8px;
+  margin: 0;
+  z-index: 3;
 }
 
-.ws-list {
+.valley-screen-account .valley-character-heading { margin: 0; }
+
+.valley-screen-account .valley-character-heading h2 {
+  font-size: clamp(18px, 2.4vh, 26px);
+  line-height: 1.2;
+}
+
+.valley-screen-account .valley-character-heading p {
+  font-size: clamp(11px, 1.4vh, 13px);
+  margin: 2px 0 0;
+}
+
+.valley-screen-account .valley-character-layout {
   flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+  gap: clamp(14px, 2vw, 28px);
+  align-items: stretch;
+}
+
+.valley-screen-account .valley-detailed-editor {
+  height: 100%;
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 
-.ws-list-item {
-  padding: 7px 10px;
-}
-
-/* 其它页面（作业、成员、活动、知识库、设置、数据分析等）同样收缩到一屏 */
-.ws-main > section,
-.ws-main > div:not(.valley-workspace-bar) {
-  min-height: 0;
-}
-
-.ws-main table {
-  font-size: clamp(11px, 1vw, 13px);
-}
-
-.ws-main .table-wrap,
-.ws-main .list-scroll {
+.valley-screen-account .valley-account-fields {
   min-height: 0;
   overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.valley-screen-account .valley-farmer-stage {
+  height: clamp(180px, 31vh, 290px);
+}
+
+.valley-screen-account .valley-farmer-sprite {
+  width: clamp(170px, 28vh, 270px);
+  height: clamp(170px, 28vh, 270px);
+  bottom: 6px;
+}
+
+/* 登录页只有“造型”一个分类，隐藏分类条给九宫格腾高度 */
+.valley-screen-account .valley-editor-tabs { display: none; }
+
+.valley-screen-account .valley-editor-tabs { margin: 6px 0; }
+
+.valley-screen-account .wardrobe-item-grid {
+  gap: 5px;
+  padding: 5px;
+  margin-top: 5px;
+}
+
+.valley-screen-account .selected-outfit-summary { margin: 6px 0; }
+
+.valley-screen-account .valley-editor-actions { gap: 6px; }
+
+@media (max-height: 900px) {
+  .valley-screen-account .valley-editor-storage,
+  .valley-screen-account .selected-outfit-summary,
+  .valley-screen-account .valley-preview-name { display: none; }
 }
 
 @media (max-height: 820px) {
-  .ws-metric { padding: 6px 10px; }
-  .ws-metric strong { font-size: 20px; }
-  .ws-header p:not(.ws-kicker) { display: none; }
-  .ws-list-item small { display: none; }
+  .valley-screen-account .valley-farmer-stage { height: 24vh; }
+  .valley-screen-account .valley-farmer-sprite { width: 22vh; height: 22vh; }
+  .valley-screen-account .wardrobe-item-grid { gap: 4px; padding: 4px; }
+  .valley-screen-account .valley-editor-actions { gap: 4px; margin-top: 2px; }
+  .valley-screen-account .valley-editor-actions button { padding: 5px 8px; font-size: 10px; }
 }
+

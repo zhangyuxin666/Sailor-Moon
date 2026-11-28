@@ -1,7 +1,6 @@
 package com.activityassistant.api;
 
 import com.activityassistant.service.*;
-import com.activityassistant.persistence.Db;
 import com.activityassistant.support.ApiException;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.security.core.Authentication;
@@ -10,10 +9,22 @@ import java.util.Map;
 
 @RestController
 public class ManagementController {
-    private final ActivityManagementService activities;private final RegistrationService registrations;private final TaskManagementService tasks;private final Db db;
-    public ManagementController(ActivityManagementService activities,RegistrationService registrations,TaskManagementService tasks,Db db){this.activities=activities;this.registrations=registrations;this.tasks=tasks;this.db=db;}
+    private final ActivityManagementService activities;
+    private final RegistrationService registrations;
+    private final TaskManagementService tasks;
+    private final ManagementQueries queries;
+
+    public ManagementController(ActivityManagementService activities, RegistrationService registrations,
+                                TaskManagementService tasks, ManagementQueries queries) {
+        this.activities = activities;
+        this.registrations = registrations;
+        this.tasks = tasks;
+        this.queries = queries;
+    }
     @GetMapping("/notifications")
-    public Map<String,Object> notifications(Authentication auth){return Map.of("notifications",db.readList("SELECT id,activity_id,content,created_at FROM messages WHERE recipient_account_id=? ORDER BY id DESC LIMIT 100",AuthController.required(auth).id()));}
+    public Map<String,Object> notifications(Authentication auth) {
+        return Map.of("notifications", queries.notifications(AuthController.required(auth).id()));
+    }
     @PutMapping("/activities/{id}/registration-settings")
     public Map<String,Object> settings(Authentication auth,@PathVariable String id,@RequestBody JsonNode input){return registrations.settings(id,AuthController.required(auth),input);}
     @PostMapping("/forms/{formId}/registrations/{registrationId}/receipt")
@@ -26,10 +37,10 @@ public class ManagementController {
     public Map<String,Object> cancel(Authentication auth,@PathVariable String id,@RequestBody JsonNode input){return activities.cancel(id,AuthController.required(auth),input);}
     @PostMapping("/runs/{runId}/cancel")
     public Map<String,Object> cancelRun(Authentication auth,@PathVariable String runId,@RequestBody JsonNode input){
-        var run=db.one("SELECT * FROM agent_runs WHERE id=?",runId).orElseThrow(()->ApiException.notFound("运行不存在"));
+        var run=queries.findRun(runId).orElseThrow(()->ApiException.notFound("运行不存在"));
         if(!"activity".equals(run.get("kind")))throw ApiException.forbidden("只能取消活动运行");
         var actor=AuthController.required(auth);
-        var owner=db.one("SELECT user_id FROM activities WHERE id=?",run.get("ref_id")).orElseThrow(()->ApiException.notFound("活动不存在"));
+        var owner=queries.findActivityOwner(String.valueOf(run.get("ref_id"))).orElseThrow(()->ApiException.notFound("活动不存在"));
         if(!actor.isManager() || !actor.username().equals(owner.get("user_id")))throw ApiException.forbidden("只能取消自己的运行");
         if("succeeded".equals(run.get("status")))throw ApiException.badRequest("成功运行已结束，请使用活动取消入口");
         return activities.cancel(String.valueOf(run.get("ref_id")),AuthController.required(auth),input);

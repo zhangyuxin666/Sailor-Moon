@@ -42,12 +42,21 @@
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+            <version>3.0.5</version>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -60,7 +69,8 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
+            <!-- 编译期需要 PGConnection 来做 LISTEN/NOTIFY，不能用 runtime 作用域 -->
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.poi</groupId>

@@ -1,11 +1,10 @@
 package com.activityassistant.service;
 
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.RunLifecycleMapper;
 import com.activityassistant.support.ApiException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -43,9 +42,9 @@ class RunLifecycleServiceTest {
                 .isEqualTo("2026-10-25T19:00:00");
         assertThat(db.run.get("resolution_json")).isNull();
         assertThat(db.run.get("plan_json")).isEqualTo(db.activity.get("plan_json"));
-        assertThat(db.updates).anyMatch(sql -> sql.contains("attempts=0"));
-        assertThat(db.queries).anyMatch(sql -> sql.contains("agent_runs") && sql.endsWith("FOR UPDATE"));
-        assertThat(db.queries).anyMatch(sql -> sql.contains("background_jobs") && sql.endsWith("FOR UPDATE"));
+        assertThat(db.updates).anyMatch("resetJob"::equals);
+        assertThat(db.queries).anyMatch("lockRun"::equals);
+        assertThat(db.queries).anyMatch("lockJob"::equals);
         int writes = db.updates.size();
         assertThat(service.resume("run1")).containsEntry("idempotent", true);
         assertThat(db.updates).hasSize(writes);
@@ -130,7 +129,7 @@ class RunLifecycleServiceTest {
         db.jobStatus = "failed";
         assertThat(service.resume("run1")).containsEntry("status", "pending");
         assertThat(db.activity.get("plan_json")).isEqualTo(snapshot);
-        assertThat(db.updates).noneMatch(sql -> sql.startsWith("UPDATE activities SET title="));
+        assertThat(db.updates).noneMatch("saveActivityPlan"::equals);
     }
 
     @Test
@@ -139,9 +138,9 @@ class RunLifecycleServiceTest {
         RunLifecycleService service = new RunLifecycleService(db, mapper);
         service.pauseForInput("run1", "a1", List.of("请确认活动时间"));
 
-        assertThat(db.updates).anyMatch(sql -> sql.startsWith("UPDATE agent_runs SET status='waiting_input'"));
-        assertThat(db.updates).anyMatch(sql -> sql.startsWith("UPDATE activities SET status='waiting_input'"));
-        assertThat(db.updates).anyMatch(sql -> sql.startsWith("UPDATE background_jobs SET status='succeeded'"));
+        assertThat(db.updates).anyMatch("waitForInput"::equals);
+        assertThat(db.updates).anyMatch("waitActivity"::equals);
+        assertThat(db.updates).anyMatch("finishJob"::equals);
     }
 
     @Test
@@ -164,7 +163,27 @@ class RunLifecycleServiceTest {
         return run;
     }
 
-    private static final class FakeDb extends Db {
+    private static final class FakeDb implements RunLifecycleMapper {
+        @Override public Map<String, Object> lockJobRow(String runId) {
+            return lockJob(runId).orElse(null);
+        }
+
+        @Override public Map<String, Object> findRunRow(String runId) {
+            return findRun(runId).orElse(null);
+        }
+
+        @Override public Map<String, Object> lockActivityStatusRow(String activityId) {
+            return lockActivityStatus(activityId).orElse(null);
+        }
+
+        @Override public Map<String, Object> lockRunRow(String runId) {
+            return lockRun(runId).orElse(null);
+        }
+
+        @Override public Map<String, Object> lockActivityPlanRow(String activityId) {
+            return lockActivityPlan(activityId).orElse(null);
+        }
+
         private final Map<String, Object> run;
         private final Map<String, Object> activity = new LinkedHashMap<>();
         private final List<String> updates = new ArrayList<>();
@@ -172,7 +191,7 @@ class RunLifecycleServiceTest {
         private String jobStatus = "succeeded";
 
         private FakeDb(Map<String, Object> run) {
-            super(new JdbcTemplate());
+            super();
             this.run = run;
             activity.put("title", "Reviewed event");
             activity.put("raw_input", "Original request");
@@ -183,35 +202,70 @@ class RunLifecycleServiceTest {
                     """);
         }
 
-        @Override
-        public Optional<Map<String, Object>> one(String sql, Object... args) {
-            queries.add(sql);
-            if (sql.startsWith("SELECT * FROM agent_runs")) return Optional.of(run);
-            if(sql.startsWith("SELECT status FROM activities"))return Optional.of(Map.of("status","waiting_input"));
-            if (sql.startsWith("SELECT title, raw_input, plan_json FROM activities")) return Optional.of(activity);
-            if (sql.startsWith("SELECT status FROM background_jobs")) return Optional.of(Map.of("status", jobStatus));
-            throw new AssertionError("Unexpected query: " + sql);
+        @Override public void saveActivityPlan(String title, String plan, String activityId) {
+            updates.add("saveActivityPlan");
+            activity.put("title", title); activity.put("plan_json", plan);
         }
 
-        @Override
-        public int update(String sql, Object... args) {
-            updates.add(sql + " " + Arrays.asList(args));
-            if (sql.startsWith("UPDATE activities SET title=")) {
-                activity.put("title", args[0]);
-                activity.put("plan_json", args[1]);
-            }
-            if (sql.startsWith("UPDATE agent_runs SET input_json=")) {
-                run.put("input_json", args[0]);
-                run.put("plan_json", args[1]);
-                run.put("resolution_json", args[2]);
-            }
-            if (sql.startsWith("UPDATE agent_runs SET plan_json=")) run.put("plan_json", args[0]);
-            if (sql.startsWith("UPDATE agent_runs SET status='pending'")) {
-                run.put("status", "pending");
-                run.put("resolution_json", null);
-            }
-            if (sql.startsWith("UPDATE background_jobs SET status='queued'")) jobStatus = "queued";
-            return 1;
+        @Override public void saveInput(String input, String plan, String resolution, String now, String runId) {
+            updates.add("saveInput");
+            run.put("input_json", input); run.put("plan_json", plan); run.put("resolution_json", resolution);
+        }
+
+        @Override public Optional<Map<String, Object>> lockJob(String runId) {
+            queries.add("lockJob");
+            return Optional.of(Map.of("status", jobStatus));
+        }
+
+        @Override public void saveRunPlan(String plan, String now, String runId) {
+            updates.add("saveRunPlan");
+            run.put("plan_json", plan);
+        }
+
+        @Override public void resetRun(String now, String runId) {
+            updates.add("resetRun");
+            run.put("status", "pending"); run.put("resolution_json", null);
+        }
+
+        @Override public void queueActivity(String activityId) {
+            updates.add("queueActivity");
+        }
+
+        @Override public int resetJob(String now, String runId) {
+            updates.add("resetJob");
+            jobStatus = "queued"; return 1;
+        }
+
+        @Override public void waitForInput(String resolution, String now, String runId) {
+            updates.add("waitForInput");
+        }
+
+        @Override public void waitActivity(String activityId) {
+            updates.add("waitActivity");
+        }
+
+        @Override public void finishJob(String finishedAt, String now, String runId) {
+            updates.add("finishJob");
+        }
+
+        @Override public Optional<Map<String, Object>> findRun(String runId) {
+            queries.add("findRun");
+            return Optional.of(run);
+        }
+
+        @Override public Optional<Map<String, Object>> lockActivityStatus(String activityId) {
+            queries.add("lockActivityStatus");
+            return Optional.of(Map.of("status", "waiting_input"));
+        }
+
+        @Override public Optional<Map<String, Object>> lockRun(String runId) {
+            queries.add("lockRun");
+            return Optional.of(run);
+        }
+
+        @Override public Optional<Map<String, Object>> lockActivityPlan(String activityId) {
+            queries.add("lockActivityPlan");
+            return Optional.of(activity);
         }
     }
 }

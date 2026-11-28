@@ -1,0 +1,47 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#555"/></marker><filter id="shadow"><feDropShadow dx="2" dy="3" stdDeviation="2" flood-opacity="0.18"/></filter></defs>
+<rect width="1400" height="850" fill="#FAFCF7"/><rect x="20" y="18" width="1360" height="82" rx="14" fill="#48693A"/>
+<text x="700" y="52" text-anchor="middle" font-family="Microsoft YaHei" font-size="28" font-weight="bold" fill="white">一句话发起活动的业务全流程</text>
+<text x="700" y="80" text-anchor="middle" font-family="Microsoft YaHei" font-size="15" fill="#E9F2E4">AI生成建议，人工确认后由可靠Worker执行</text>
+<line x1="177.5" y1="272.5" x2="512.5" y2="272.5" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="512.5" y1="272.5" x2="847.5" y2="272.5" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="847.5" y1="272.5" x2="1182.5" y2="272.5" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="1182.5" y1="272.5" x2="1182.5" y2="552.5" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="1182.5" y1="552.5" x2="847.5" y2="552.5" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="847.5" y1="552.5" x2="512.5" y2="552.5" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="512.5" y1="552.5" x2="177.5" y2="552.5" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="847.5" y1="272.5" x2="380" y2="735" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="613.75" y="496.75" text-anchor="middle" font-family="Microsoft YaHei" font-size="12" fill="#555">校验失败</text>
+<line x1="1182.5" y1="552.5" x2="1020" y2="735" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="1101.25" y="636.75" text-anchor="middle" font-family="Microsoft YaHei" font-size="12" fill="#555">工具失败</text>
+<rect x="40" y="220" width="275" height="105" rx="14" fill="#E2EFDA" stroke="#6B7A5A" stroke-width="2" filter="url(#shadow)"/>
+<text x="177.5" y="261.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">1 需求输入</text>
+<text x="177.5" y="285.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">选择班级并描述活动</text>
+<rect x="375" y="220" width="275" height="105" rx="14" fill="#EADFF4" stroke="#6B7A5A" stroke-width="2" filter="url(#shadow)"/>
+<text x="512.5" y="261.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">2 AI分析</text>
+<text x="512.5" y="285.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">意图识别 + RAG + 草案</text>
+<rect x="710" y="220" width="275" height="105" rx="14" fill="#FFF2CC" stroke="#6B7A5A" stroke-width="2" filter="url(#shadow)"/>
+<text x="847.5" y="261.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">3 人工确认</text>
+<text x="847.5" y="285.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">修改时间、任务与流程</text>
+<rect x="1045" y="220" width="275" height="105" rx="14" fill="#E2EFDA" stroke="#6B7A5A" stroke-width="2" filter="url(#shadow)"/>
+<text x="1182.5" y="261.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">4 发布入队</text>
+<text x="1182.5" y="285.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">保存快照和后台任务</text>
+<rect x="1045" y="500" width="275" height="105" rx="14" fill="#E2EFDA" stroke="#6B7A5A" stroke-width="2" filter="url(#shadow)"/>
+<text x="1182.5" y="541.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">5 工具执行</text>
+<text x="1182.5" y="565.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">表单→任务→提醒→QQ</text>
+<rect x="710" y="500" width="275" height="105" rx="14" fill="#E2EFDA" stroke="#6B7A5A" stroke-width="2" filter="url(#shadow)"/>
+<text x="847.5" y="541.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">6 参与执行</text>
+<text x="847.5" y="565.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">报名、任务、签到、反馈</text>
+<rect x="375" y="500" width="275" height="105" rx="14" fill="#FCE4D6" stroke="#6B7A5A" stroke-width="2" filter="url(#shadow)"/>
+<text x="512.5" y="541.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">7 数据观察</text>
+<text x="512.5" y="565.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">RabbitMQ + SSE大屏</text>
+<rect x="40" y="500" width="275" height="105" rx="14" fill="#EADFF4" stroke="#6B7A5A" stroke-width="2" filter="url(#shadow)"/>
+<text x="177.5" y="541.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">8 活动复盘</text>
+<text x="177.5" y="565.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">统计快照、正文与版本</text>
+<rect x="200" y="700" width="360" height="70" rx="14" fill="#FFE6E6" stroke="#C00000" stroke-width="2" filter="url(#shadow)"/>
+<text x="380" y="724" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">缺少信息</text>
+<text x="380" y="748" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">waiting_input → 补充后恢复</text>
+<rect x="840" y="700" width="360" height="70" rx="14" fill="#FFE6E6" stroke="#C00000" stroke-width="2" filter="url(#shadow)"/>
+<text x="1020" y="724" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">执行失败</text>
+<text x="1020" y="748" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">有限重试；取消不可覆盖</text>
+</svg>

@@ -10,7 +10,9 @@ import ExportActions from '../components/ExportActions';
 import GenerationInfo from '../components/GenerationInfo';
 import RunPanel from '../components/RunPanel';
 import ActivityManagement from '../components/ActivityManagement';
+import ActivityReactions from '../components/ActivityReactions';
 import { formatDate } from '../lib/utils';
+import { trackActivity, useActivityBehavior } from '../lib/activity-behavior';
 import { questionnaireAnswers, stepPresentation, visibleOperationalError } from '../lib/activity-view';
 import type { ActivityDetail, ActivityTask, FormStats } from '../types';
 
@@ -31,6 +33,7 @@ export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
   const { showToast } = useToast();
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
+  useActivityBehavior(detail?.activity.id === id ? id : undefined);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [stats, setStats] = useState<FormStats | null>(null);
@@ -200,7 +203,9 @@ export default function ActivityDetail() {
   const deliveries = detail.deliveries ?? [];
   const reminders = detail.reminders ?? [];
   const forms = detail.forms ?? [];
-  const title = plan.title || activity.title || '未命名活动';
+  // 标题优先用结构化方案里的名称；模型常把原始输入直接当标题，去掉结尾标点避免“12 月 5 日…运动会，”这种残句
+  const title = (plan.title || activity.title || '未命名活动').replace(/[，,。.；;、\s]+$/, '') || '未命名活动';
+  const rawInput = (activity.raw_input || '').replace(/\s+/g, ' ').trim();
   const doneCount = tasks.filter((task) => task.status === 'done').length;
   const sentCount = deliveries.filter((delivery) => delivery.status === 'sent').length;
   const failedCount = deliveries.filter((delivery) => delivery.status === 'failed').length;
@@ -212,16 +217,30 @@ export default function ActivityDetail() {
     <>
       <header className="ws-header">
         <div><p className="ws-kicker">ACTIVITY</p><h1>{title}</h1>
-          <p>{activity.raw_input ? `${activity.raw_input} · ` : ''}{formatDate(activity.created_at)}</p>
+          <ActivityReactions key={activity.id} activityId={activity.id} />
+          {detail.forms?.[0] && <button className="ws-button light" type="button" onClick={async () => {
+            trackActivity(activity.id, 'share_clicked');
+            try {
+              await navigator.clipboard.writeText(new URL(`/forms/${detail.forms?.[0]?.id}`, location.origin).href);
+              showToast('报名链接已复制', 'success');
+            } catch {
+              showToast('复制失败，请从报名页面复制链接', 'error');
+            }
+          }}>复制报名链接</button>}
+          <p>活动时间 {formatDate(plan.event_time)} · 发起于 {formatDate(activity.created_at)}</p>
+          {rawInput && <p className="activity-raw">原始需求：{rawInput.length > 60 ? `${rawInput.slice(0, 60)}…` : rawInput}</p>}
         </div>
         <span className="ws-tag" style={{ color: activityState.color }}>{STATUS_LABELS[activity.status] || activity.status || '状态未记录'}</span>
       </header>
       {loadError && <DataState error={'刷新失败，以下保留上次数据：' + loadError} onRetry={() => load(true)} />}
-      <ExportActions activityId={id}/>
-      <GenerationInfo value={plan.generation}/>
+      <div className="ws-metrics activity-metrics">
+        <div className="ws-metric"><span>报名人数</span><strong>{stats ? stats.count : '—'}</strong></div>
+        <div className="ws-metric"><span>任务完成</span><strong>{doneCount}/{tasks.length}</strong></div>
+        <div className="ws-metric"><span>定时提醒</span><strong>{reminders.length}</strong></div>
+      </div>
+      <div className="activity-toolbar"><ExportActions activityId={id}/></div>
       <div className="ws-grid">
-        <RunPanel key={detail.run_id ?? id} runId={detail.run_id} onChanged={() => load(true).then(() => undefined)} />
-        <ActivityManagement id={id} detail={detail} stats={stats} onChanged={() => load(true)} />
+        <ParticipationManagement key={id} activityId={id} status={activity.status} onChanged={()=>load(true)}/>
         <section className="ws-panel wide">
           <div className="ws-panel-title"><div><h2>活动策划</h2><p>活动时间 {formatDate(plan.event_time)}</p></div>
             {steps.some((step) => step.step === 'create_calendar_event' && step.status === 'done')
@@ -263,6 +282,19 @@ export default function ActivityDetail() {
             {stats && !stats.registrations.length && !statsError && <div className="ws-empty">还没有人报名</div>}
         </section>}
 
+        <details className="ws-panel wide ws-fold" aria-label="高级设置与变更记录">
+          <summary><strong>高级设置与变更记录</strong><span>报名规则 · 改期 · 取消 · 分工 · 变更历史</span></summary>
+          <div className="fold-body">
+            <GenerationInfo value={plan.generation}/>
+            <ActivityManagement id={id} detail={detail} stats={stats} onChanged={() => load(true)} />
+          </div>
+        </details>
+
+        <details className="ws-panel wide ws-fold" aria-label="运行记录">
+          <summary><strong>运行记录</strong><span>工作流状态 · 执行步骤 · 提醒 · QQ 投递</span></summary>
+          <div className="fold-body">
+            <RunPanel key={detail.run_id ?? id} runId={detail.run_id} onChanged={() => load(true).then(() => undefined)} />
+
         <section className="ws-panel">
           <div className="ws-panel-title"><div><h2>自动执行记录</h2><p>显示每一步的真实状态、尝试次数和结果</p></div></div>
           {steps.length ? <div className="step-list">{steps.map((step, index) => {
@@ -301,8 +333,9 @@ export default function ActivityDetail() {
             </div>
           ))}</div> : <div className="ws-empty">还没有 QQ 投递记录</div>}
         </section>}
+          </div>
+        </details>
 
-        <ParticipationManagement key={id} activityId={id} status={activity.status} onChanged={()=>load(true)}/>
         <RecapPanel key={id} id={id} status={activity.status} version={activity.version} onChanged={()=>load(true)}/>
       </div>
     </>

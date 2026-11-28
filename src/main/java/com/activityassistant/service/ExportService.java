@@ -1,6 +1,6 @@
 package com.activityassistant.service;
 
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.ExportMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.ApiException;
 import com.activityassistant.support.CsvExport;
@@ -15,20 +15,20 @@ import java.util.*;
 /** Export explicit business columns at one database snapshot, never internal credentials or metadata. */
 @Service
 public class ExportService {
-    private final Db db;
+    private final ExportMapper exports;
     private final ClassroomService classroom;
     private final AuditService audits;
     private final ObjectMapper mapper;
 
-    public ExportService(Db db, ClassroomService classroom, AuditService audits, ObjectMapper mapper) {
-        this.db = db;
+    public ExportService(ExportMapper exports, ClassroomService classroom, AuditService audits, ObjectMapper mapper) {
+        this.exports = exports;
         this.classroom = classroom;
         this.audits = audits;
         this.mapper = mapper;
     }
 
     private String activityOwner(String id, AccountPrincipal actor) {
-        Map<String,Object> activity = db.one("SELECT a.user_id,ac.class_id,ac.organization_id FROM activities a LEFT JOIN activity_classes ac ON ac.activity_id=a.id WHERE a.id=?", id)
+        Map<String,Object> activity = exports.findActivityOwner(id)
                 .orElseThrow(() -> ApiException.notFound("活动不存在"));
         if (!actor.isManager() || !actor.username().equals(activity.get("user_id")))
             throw ApiException.forbidden("只能导出自己活动的数据");
@@ -55,8 +55,8 @@ public class ExportService {
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public byte[] registrations(String id, AccountPrincipal actor) {
         String org = activityOwner(id, actor);
-        List<Map<String,Object>> forms = db.list("SELECT id,title,fields_json FROM forms WHERE activity_id=? ORDER BY created_at,id", id);
-        List<Map<String,Object>> registrations = db.list("SELECT r.id,r.form_id,f.title AS form_title,r.name,r.contact,r.status,r.created_at,r.cancelled_at,r.extra_json FROM registrations r JOIN forms f ON f.id=r.form_id WHERE f.activity_id=? ORDER BY r.created_at,r.id", id);
+        List<Map<String,Object>> forms = exports.listForms(id);
+        List<Map<String,Object>> registrations = exports.listRegistrations(id);
         Map<String,LinkedHashSet<String>> labels = new LinkedHashMap<>();
         for (Map<String,Object> form : forms) {
             for (JsonNode field : parse(form.get("fields_json"))) {
@@ -99,9 +99,9 @@ public class ExportService {
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public byte[] tasks(String id, AccountPrincipal actor) {
         String org = activityOwner(id, actor);
-        List<Map<String,Object>> tasks = db.list("SELECT t.id,t.title,t.description,t.deadline,t.priority,t.status,t.assignee AS historical_assignee,t.unassigned_reason,ata.account_id,a.username,a.student_no,a.display_name FROM tasks t LEFT JOIN activity_task_assignees ata ON ata.task_id=t.id LEFT JOIN accounts a ON a.id=ata.account_id WHERE t.activity_id=? ORDER BY t.created_at,t.id", id);
+        List<Map<String,Object>> tasks = exports.listTasks(id);
         Map<String,List<String>> dependencies = new LinkedHashMap<>();
-        for (Map<String,Object> dependency : db.list("SELECT d.task_id,d.depends_on_id,dep.title FROM task_dependencies d JOIN tasks own ON own.id=d.task_id LEFT JOIN tasks dep ON dep.id=d.depends_on_id AND dep.activity_id=own.activity_id WHERE own.activity_id=? ORDER BY d.task_id,d.depends_on_id", id)) {
+        for (Map<String,Object> dependency : exports.listDependencies(id)) {
             dependencies.computeIfAbsent(String.valueOf(dependency.get("task_id")), key -> new ArrayList<>())
                     .add(String.valueOf(dependency.get("depends_on_id")) + "：" + (dependency.get("title") == null ? "无效依赖" : dependency.get("title")));
         }
@@ -116,11 +116,11 @@ public class ExportService {
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public byte[] missing(String id, AccountPrincipal actor) {
         if (!actor.isManager()) throw ApiException.forbidden("只有管理者可以导出未交名单");
-        Map<String,Object> todo = db.one("SELECT id,class_id,title,deadline FROM todos WHERE id=?",id)
+        Map<String,Object> todo = exports.findTodo(id)
                 .orElseThrow(() -> ApiException.notFound("待办不存在"));
         String org = String.valueOf(classroom.requireClassManager(String.valueOf(todo.get("class_id")),actor).get("organization_id"));
         List<List<?>> rows = new ArrayList<>();
-        for (Map<String,Object> member : db.list("SELECT ta.account_id,a.username,a.student_no,a.display_name,ta.status FROM todo_assignees ta JOIN accounts a ON a.id=ta.account_id WHERE ta.todo_id=? AND ta.status<>'done' ORDER BY a.student_no,a.username,a.id",id))
+        for (Map<String,Object> member : exports.listMissingMembers(id))
             rows.add(Arrays.asList(todo.get("id"),todo.get("title"),todo.get("deadline"),member.get("account_id"),member.get("username"),member.get("student_no"),member.get("display_name"),member.get("status")));
         byte[] csv = CsvExport.bytes(List.of("待办编号","待办标题","截止时间","账号编号","登录账号","学号","姓名","完成状态"),rows);
         audits.write("export.missing",actor.id(),org,"todo",id,Map.of("row_count",rows.size()));

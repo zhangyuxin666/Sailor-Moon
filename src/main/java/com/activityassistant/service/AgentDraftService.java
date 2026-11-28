@@ -2,7 +2,7 @@ package com.activityassistant.service;
 
 import com.activityassistant.api.ApiModels;
 import com.activityassistant.integration.AiClient;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.AgentDraftMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.ApiException;
 import com.activityassistant.support.Ids;
@@ -21,7 +21,7 @@ import java.util.Map;
 
 @Service
 public class AgentDraftService {
-    private final Db db;
+    private final AgentDraftMapper drafts;
     private final ClassroomService classroom;
     private final ActivityService activities;
     private final AiClient ai;
@@ -30,10 +30,10 @@ public class AgentDraftService {
     private final ObjectMapper mapper;
     private final RunLifecycleService lifecycle;
 
-    public AgentDraftService(Db db, ClassroomService classroom, ActivityService activities, AiClient ai,
+    public AgentDraftService(AgentDraftMapper drafts, ClassroomService classroom, ActivityService activities, AiClient ai,
                              AuditService audits, QqService qq, ObjectMapper mapper,
                              RunLifecycleService lifecycle) {
-        this.db = db;
+        this.drafts = drafts;
         this.classroom = classroom;
         this.activities = activities;
         this.ai = ai;
@@ -47,9 +47,7 @@ public class AgentDraftService {
     public Map<String, Object> create(AccountPrincipal account, String classId, String rawInput) {
         if (!account.isManager()) throw ApiException.forbidden("只有管理者可以使用发布 Agent");
         Map<String, Object> classInfo = classroom.requireClassManager(classId, account);
-        List<Map<String, Object>> members = db.list(
-                "SELECT a.id AS account_id, a.display_name FROM class_members cm JOIN accounts a ON a.id=cm.account_id " +
-                "WHERE cm.class_id=? AND a.status='active' ORDER BY a.student_no, a.id", classId);
+        List<Map<String, Object>> members = drafts.listClassMembers(classId);
         String context = "班级：" + classInfo.get("name") + "；成员数：" + members.size() + "；成员：" + json(members);
         String organizationId = String.valueOf(classInfo.get("organization_id"));
         JsonNode analyzed = ai.analyzeWorkRequest(rawInput, context, organizationId);
@@ -76,8 +74,7 @@ public class AgentDraftService {
         }
         String id = Ids.shortId();
         String now = LocalDateTime.now().toString();
-        db.update("INSERT INTO agent_drafts (id, organization_id, class_id, creator_id, raw_input, intent_type, complexity, draft_json, status, created_at, updated_at) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)", id, organizationId, classId, account.id(), rawInput,
+        drafts.insertDraft(id, organizationId, classId, account.id(), rawInput,
                 draft.path("intent_type").asText(), draft.path("complexity").asText(), draft.toString(), now, now);
         audits.write("agent.draft_create", account.id(), organizationId, "agent_draft", id,
                 Map.of("intent_type", draft.path("intent_type").asText(), "complexity", draft.path("complexity").asText()));
@@ -85,8 +82,7 @@ public class AgentDraftService {
     }
 
     public Map<String, Object> get(AccountPrincipal account, String id) {
-        Map<String, Object> row = db.one("SELECT d.*, c.name AS class_name FROM agent_drafts d JOIN classes c ON c.id=d.class_id " +
-                "JOIN organization_members om ON om.organization_id=d.organization_id WHERE d.id=? AND om.account_id=?", id, account.id())
+        Map<String, Object> row = drafts.findVisibleDraft(id, account.id())
                 .orElseThrow(() -> ApiException.notFound("草案不存在"));
         Map<String, Object> result = new LinkedHashMap<>(row);
         result.put("draft", parse(String.valueOf(result.remove("draft_json"))));
@@ -94,9 +90,7 @@ public class AgentDraftService {
     }
 
     public List<Map<String, Object>> list(AccountPrincipal account) {
-        List<Map<String, Object>> rows = db.list("SELECT d.id, d.intent_type, d.complexity, d.status, d.result_type, d.result_id, d.created_at, d.updated_at, " +
-                "c.name AS class_name, d.draft_json FROM agent_drafts d JOIN classes c ON c.id=d.class_id JOIN organization_members om ON om.organization_id=d.organization_id " +
-                "WHERE om.account_id=? ORDER BY d.created_at DESC LIMIT 100", account.id());
+        List<Map<String, Object>> rows = drafts.listVisibleDrafts(account.id());
         List<Map<String, Object>> result = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             Map<String, Object> item = new LinkedHashMap<>(row);
@@ -110,7 +104,7 @@ public class AgentDraftService {
 
     @Transactional
     public Map<String, Object> update(AccountPrincipal account, String id, JsonNode draft) {
-        db.one("SELECT id FROM agent_drafts WHERE id=? FOR UPDATE", id)
+        drafts.lockDraft(id)
                 .orElseThrow(() -> ApiException.notFound("草案不存在"));
         Map<String, Object> current = get(account, id);
         classroom.requireClassManager(String.valueOf(current.get("class_id")), account);
@@ -131,8 +125,7 @@ public class AgentDraftService {
             reviewed.set("form_fields", ConfirmedPlans.fields(reviewed.path("form_fields"), mapper));
             reviewed.set("execution_plan", ConfirmedPlans.fromDraft(reviewed, mapper));
         }
-        db.update("UPDATE agent_drafts SET intent_type=?, complexity=?, draft_json=?, updated_at=? WHERE id=?",
-                reviewed.path("intent_type").asText(), reviewed.path("complexity").asText(), reviewed.toString(), LocalDateTime.now().toString(), id);
+        drafts.updateDraft(reviewed.path("intent_type").asText(), reviewed.path("complexity").asText(), reviewed.toString(), LocalDateTime.now().toString(), id);
         audits.write("agent.draft_update", account.id(), String.valueOf(current.get("organization_id")), "agent_draft", id, null);
         return get(account, id);
     }
@@ -140,7 +133,7 @@ public class AgentDraftService {
     @Transactional
     public Map<String, Object> publish(AccountPrincipal account, String id) {
         // Serialize updates/publication, and publish the reviewed plan in the same transaction as queueing.
-        db.one("SELECT id FROM agent_drafts WHERE id=? FOR UPDATE", id)
+        drafts.lockDraft(id)
                 .orElseThrow(() -> ApiException.notFound("草案不存在"));
         Map<String, Object> current = get(account, id);
         classroom.requireClassManager(String.valueOf(current.get("class_id")), account);
@@ -154,14 +147,13 @@ public class AgentDraftService {
             return response;
         }
         if (!"draft".equals(current.get("status"))) throw ApiException.badRequest("草案正在发布，请勿重复操作");
-        if (db.update("UPDATE agent_drafts SET status='publishing', updated_at=? WHERE id=? AND status='draft'", LocalDateTime.now().toString(), id) == 0)
+        if (drafts.startPublishing(LocalDateTime.now().toString(), id) == 0)
             throw ApiException.badRequest("草案正在发布，请勿重复操作");
         JsonNode draft = (JsonNode) current.get("draft");
         ConfirmedPlans.validateDraft(draft);
         try {
             PublishOutcome result = execute(account, current, draft);
-            db.update("UPDATE agent_drafts SET status='published', result_type=?, result_id=?, updated_at=? WHERE id=?",
-                    result.type(), result.id(), LocalDateTime.now().toString(), id);
+            drafts.publish(result.type(), result.id(), LocalDateTime.now().toString(), id);
             audits.write("agent.draft_publish", account.id(), String.valueOf(current.get("organization_id")), result.type(), result.id(), Map.of("draft_id", id));
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("status", "published");
@@ -172,7 +164,7 @@ public class AgentDraftService {
             if (!result.missingInformation().isEmpty()) response.put("missing_information", result.missingInformation());
             return response;
         } catch (RuntimeException exception) {
-            db.update("UPDATE agent_drafts SET status='draft', updated_at=? WHERE id=?", LocalDateTime.now().toString(), id);
+            drafts.restoreDraft(LocalDateTime.now().toString(), id);
             throw exception;
         }
     }
@@ -200,10 +192,8 @@ public class AgentDraftService {
             String activityId = String.valueOf(queued.get("activity_id"));
             String runId = String.valueOf(queued.get("run_id"));
             confirmed.put("draft_id", String.valueOf(current.get("id")));
-            db.update("UPDATE activities SET title=?, plan_json=? WHERE id=?",
-                    confirmed.path("title").asText(), confirmed.toString(), activityId);
-            db.update("UPDATE agent_runs SET plan_json=?, updated_at=? WHERE id=?",
-                    confirmed.toString(), LocalDateTime.now().toString(), runId);
+            drafts.saveActivityPlan(confirmed.path("title").asText(), confirmed.toString(), activityId);
+            drafts.saveRunPlan(confirmed.toString(), LocalDateTime.now().toString(), runId);
             List<String> missing = unresolvedMissingInformation(draft, intent);
             String runStatus = "pending";
             // 学习点: 缺信息时活动已经创建，但编排不会开始；等待用户通过 run_id 提交补充信息。
@@ -255,7 +245,7 @@ public class AgentDraftService {
 
     private void addRunState(Map<String, Object> response, Object resultType, Object resultId) {
         if (!"activity".equals(resultType) || resultId == null) return;
-        db.one("SELECT id, status FROM agent_runs WHERE kind='activity' AND ref_id=?", resultId)
+        drafts.findResultRun(String.valueOf(resultId))
                 .ifPresent(run -> {
                     response.put("run_id", run.get("id"));
                     response.put("run_status", run.get("status"));
@@ -268,9 +258,7 @@ public class AgentDraftService {
 
     private void validateAssignees(String classId, JsonNode plan) {
         if (plan.path("tasks").isEmpty()) return;
-        List<String> members = db.list(
-                "SELECT a.id AS account_id FROM class_members cm JOIN accounts a ON a.id=cm.account_id " +
-                        "WHERE cm.class_id=? AND a.status='active'", classId)
+        List<String> members = drafts.listActiveMembers(classId)
                 .stream().map(row -> String.valueOf(row.get("account_id"))).toList();
         for (JsonNode task : plan.path("tasks")) {
             if (!members.contains(task.path("account_id").asText()))

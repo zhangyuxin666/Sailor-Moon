@@ -1,0 +1,47 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#555"/></marker><filter id="shadow"><feDropShadow dx="2" dy="3" stdDeviation="2" flood-opacity="0.18"/></filter></defs>
+<rect width="1400" height="850" fill="#FAFCF7"/><rect x="20" y="18" width="1360" height="82" rx="14" fill="#48693A"/>
+<text x="700" y="52" text-anchor="middle" font-family="Microsoft YaHei" font-size="28" font-weight="bold" fill="white">生产/集群部署拓扑</text>
+<text x="700" y="80" text-anchor="middle" font-family="Microsoft YaHei" font-size="15" fill="#E9F2E4">公网入口与内部服务隔离，状态保存在共享数据设施</text>
+<line x1="130" y1="245" x2="385" y2="245" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="385" y1="245" x2="675" y2="185" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="385" y1="245" x2="675" y2="325" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="185" x2="955" y2="185" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="325" x2="955" y2="185" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="185" x2="955" y2="325" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="325" x2="955" y2="325" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="185" x2="690" y2="557.5" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="325" x2="690" y2="557.5" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="185" x2="955" y2="555" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="325" x2="955" y2="555" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="185" x2="1225" y2="435" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="1225" y1="435" x2="1210" y2="695" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="955" y1="185" x2="1210" y2="695" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="30" y="200" width="200" height="90" rx="14" fill="#DDEBF7" stroke="#2E5F91" stroke-width="2" filter="url(#shadow)"/>
+<text x="130" y="234" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">用户浏览器</text>
+<text x="130" y="258" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">HTTPS + SSE</text>
+<rect x="280" y="200" width="210" height="90" rx="14" fill="#F2F2F2" stroke="#595959" stroke-width="2" filter="url(#shadow)"/>
+<text x="385" y="234" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">Caddy / Nginx</text>
+<text x="385" y="258" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">TLS与负载均衡</text>
+<rect x="570" y="140" width="210" height="90" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="675" y="174" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">Tomcat API 1</text>
+<text x="675" y="198" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">Spring Boot WAR</text>
+<rect x="570" y="280" width="210" height="90" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="675" y="314" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">Tomcat API 2</text>
+<text x="675" y="338" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">Spring Boot WAR</text>
+<rect x="850" y="140" width="210" height="90" rx="14" fill="#EADFF4" stroke="#7030A0" stroke-width="2" filter="url(#shadow)"/>
+<text x="955" y="185" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">FastAPI AI/RAG</text>
+<rect x="850" y="280" width="210" height="90" rx="14" fill="#FCE4D6" stroke="#C65911" stroke-width="2" filter="url(#shadow)"/>
+<text x="955" y="325" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">RabbitMQ</text>
+<rect x="570" y="510" width="240" height="95" rx="14" fill="#FFF2CC" stroke="#BF9000" stroke-width="2" filter="url(#shadow)"/>
+<text x="690" y="546.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">PostgreSQL + pgvector</text>
+<text x="690" y="570.5" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">持久卷</text>
+<rect x="850" y="510" width="210" height="90" rx="14" fill="#FFF2CC" stroke="#BF9000" stroke-width="2" filter="url(#shadow)"/>
+<text x="955" y="555" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">上传文件持久卷</text>
+<rect x="1120" y="390" width="210" height="90" rx="14" fill="#F2F2F2" stroke="#595959" stroke-width="2" filter="url(#shadow)"/>
+<text x="1225" y="424" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">QQ Gateway</text>
+<text x="1225" y="448" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">可选profile</text>
+<rect x="1080" y="650" width="260" height="90" rx="14" fill="#FFE6E6" stroke="#C00000" stroke-width="2" filter="url(#shadow)"/>
+<text x="1210" y="684" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">外部平台</text>
+<text x="1210" y="708" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">QQ/短信/微信/模型</text>
+</svg>

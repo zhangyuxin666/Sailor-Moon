@@ -1,6 +1,6 @@
 package com.activityassistant.api;
 
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.ClassroomSubmissionMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.service.ClassroomService;
 import com.activityassistant.service.StorageService;
@@ -32,12 +32,12 @@ import java.util.Map;
 @RestController
 public class ClassroomController {
     private final ClassroomService classroom;
-    private final Db db;
+    private final ClassroomSubmissionMapper submissions;
     private final StorageService storage;
 
-    public ClassroomController(ClassroomService classroom, Db db, StorageService storage) {
+    public ClassroomController(ClassroomService classroom, ClassroomSubmissionMapper submissions, StorageService storage) {
         this.classroom = classroom;
-        this.db = db;
+        this.submissions = submissions;
         this.storage = storage;
     }
 
@@ -128,8 +128,8 @@ public class ClassroomController {
         AccountPrincipal account = AuthController.required(authentication);
         classroom.todoDetail(account, todoId);
         if (!account.isManager() && !account.id().equals(accountId)) throw ApiException.forbidden("只能下载自己的提交文件");
-        Map<String, Object> file = db.one("SELECT storage_key, original_filename, content_type FROM file_assets WHERE todo_id=? AND account_id=? ORDER BY created_at DESC LIMIT 1",
-                todoId, accountId).orElseThrow(() -> ApiException.notFound("该成员没有上传文件"));
+        Map<String, Object> file = submissions.findLatestFile(todoId, accountId)
+                .orElseThrow(() -> ApiException.notFound("该成员没有上传文件"));
         byte[] content = storage.read(String.valueOf(file.get("storage_key")));
         String type = file.get("content_type") == null ? "application/octet-stream" : String.valueOf(file.get("content_type"));
         return ResponseEntity.ok().contentType(MediaType.parseMediaType(type))

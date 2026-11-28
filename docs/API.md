@@ -107,6 +107,8 @@ FastAPI 仅在内部网络监听，所有写入和推理接口要求 `X-Internal
 - `POST /internal/ai/analyze-work-request`
 - `POST /internal/ai/recap`
 - `POST /internal/ai/reply`
+- `POST /internal/ai/chunk`：按句子边界和重叠窗口切分文档。
+- `POST /internal/ai/chunk-embed`：切分文档并批量返回每个分片的1536维向量。
 - `POST /internal/ai/embed`
 - `POST /internal/rag/search`
 
@@ -118,8 +120,10 @@ RAG 查询携带 `organization_id`，只返回本组织和全局文档。FastAPI
 
 ## 知识库业务接口
 
-- `POST /knowledge/documents`：仅管理者；Spring 调用 AI 嵌入接口并写入 pgvector，相同组织、来源和内容重复提交返回 `idempotent=true`。
-- `POST /knowledge/search`：登录用户；Spring 注入当前组织 ID 后调用内部 RAG 检索。
+- `POST /knowledge/documents`：仅管理者；Spring 保存文档兼容向量，并调用 `chunk-embed` 将有序分片写入 `rag_document_chunks`；相同组织、来源和内容重复提交返回 `idempotent=true`。
+- `PUT /knowledge/documents/{id}`：按 `expected_version` 更新正文，并在同一事务内替换对应版本的全部分片。
+- `POST /knowledge/documents/{id}/reindex`：仅管理者；不改变正文版本，使用当前Embedding配置重建整篇兼容向量和全部分片。
+- `POST /knowledge/search`：登录用户；Spring 注入当前组织 ID，FastAPI优先检索当前版本分片；尚未重建分片的旧资料降级为整篇检索。
 
 ## 文件传输 API
 

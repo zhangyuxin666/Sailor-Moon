@@ -1,6 +1,6 @@
 package com.activityassistant.service;
 
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.AuditMapper;
 import com.activityassistant.support.Ids;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,11 +11,11 @@ import java.util.Map;
 
 @Service
 public class AuditService {
-    private final Db db;
+    private final AuditMapper mapper;
     private final ObjectMapper objectMapper;
 
-    public AuditService(Db db, ObjectMapper objectMapper) {
-        this.db = db;
+    public AuditService(AuditMapper mapper, ObjectMapper objectMapper) {
+        this.mapper = mapper;
         this.objectMapper = objectMapper;
     }
 
@@ -27,8 +27,7 @@ public class AuditService {
         } catch (JsonProcessingException exception) {
             json = "{}";
         }
-        db.update("INSERT INTO audit_logs (id, organization_id, account_id, action, resource_type, resource_id, detail_json, created_at) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                Ids.shortId(), organizationId, accountId, action, resourceType, resourceId, json, LocalDateTime.now().toString());
+        mapper.insert(new AuditMapper.Entry(Ids.shortId(), organizationId, accountId, action,
+                resourceType, resourceId, json, LocalDateTime.now().toString()));
     }
 }

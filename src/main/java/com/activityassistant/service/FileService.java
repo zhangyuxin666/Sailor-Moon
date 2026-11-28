@@ -1,7 +1,7 @@
 package com.activityassistant.service;
 
 import com.activityassistant.config.AppProperties;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.FileAssetMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.ApiException;
 import com.activityassistant.support.ChunkChecksumException;
@@ -35,12 +35,12 @@ public class FileService {
     private static final int MAX_CHUNK_BYTES = 8 * 1024 * 1024;
     private static final int DEFAULT_CHUNK_BYTES = 2 * 1024 * 1024;
 
-    private final Db db;
+    private final FileAssetMapper fileAssets;
     private final StorageService storage;
     private final AppProperties properties;
 
-    public FileService(Db db, StorageService storage, AppProperties properties) {
-        this.db = db;
+    public FileService(FileAssetMapper fileAssets, StorageService storage, AppProperties properties) {
+        this.fileAssets = fileAssets;
         this.storage = storage;
         this.properties = properties;
     }
@@ -60,9 +60,7 @@ public class FileService {
 
         // 秒传：同一账号下已经存在完全相同的文件，直接复用
         if (digest != null) {
-            Map<String, Object> existing = db.one(
-                    "SELECT id, original_filename, size_bytes, sha256 FROM file_assets WHERE account_id=? AND sha256=? AND size_bytes=?",
-                    account.id(), digest, size).orElse(null);
+            Map<String, Object> existing = fileAssets.findDuplicate(account.id(), digest, size).orElse(null);
             if (existing != null) {
                 Map<String, Object> result = new LinkedHashMap<>();
                 result.put("upload_id", null);
@@ -78,10 +76,7 @@ public class FileService {
 
         String id = Ids.shortId();
         String now = Instant.now().toString();
-        db.update("INSERT INTO upload_sessions(id, account_id, original_filename, content_type, size_bytes, " +
-                        "chunk_size, total_chunks, file_sha256, status, created_at, updated_at) " +
-                        "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                id, account.id(), filename.strip(), normalizeType(contentType), size, chunkSize, totalChunks,
+        fileAssets.createUpload(id, account.id(), filename.strip(), normalizeType(contentType), size, chunkSize, totalChunks,
                 digest, "uploading", now, now);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -137,10 +132,7 @@ public class FileService {
         }
 
         storage.writeChunk(uploadId, index, content);
-        db.update("INSERT INTO upload_chunks(session_id, chunk_index, size_bytes, sha256, created_at) " +
-                        "VALUES(?,?,?,?,?) ON CONFLICT (session_id, chunk_index) " +
-                        "DO UPDATE SET size_bytes=EXCLUDED.size_bytes, sha256=EXCLUDED.sha256, created_at=EXCLUDED.created_at",
-                uploadId, index, content.length, actual, Instant.now().toString());
+        fileAssets.saveChunk(uploadId, index, content.length, actual, Instant.now().toString());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("index", index);
@@ -154,8 +146,7 @@ public class FileService {
     public Map<String, Object> complete(AccountPrincipal account, String uploadId) {
         Map<String, Object> session = lockedSession(account, uploadId);
         if ("done".equals(session.get("status"))) {
-            Map<String, Object> asset = db.one("SELECT id, original_filename, size_bytes, sha256 FROM file_assets WHERE upload_id=? AND account_id=?",
-                    uploadId, account.id()).orElseThrow(() -> ApiException.notFound("上传结果不存在"));
+            Map<String, Object> asset = fileAssets.findCompletedAsset(uploadId, account.id()).orElseThrow(() -> ApiException.notFound("上传结果不存在"));
             return Map.of("file_id", asset.get("id"), "filename", asset.get("original_filename"),
                     "size", asset.get("size_bytes"), "sha256", asset.get("sha256"));
         }
@@ -171,8 +162,7 @@ public class FileService {
         }
         if (!missing.isEmpty()) throw new MissingChunksException(missing);
 
-        int updated = db.update("UPDATE upload_sessions SET status='merging', updated_at=? " +
-                "WHERE id=? AND status='uploading'", Instant.now().toString(), uploadId);
+        int updated = fileAssets.startMerge(Instant.now().toString(), uploadId);
         if (updated != 1) throw new ApiException(org.springframework.http.HttpStatus.CONFLICT, "该上传任务已处理");
 
         String filename = String.valueOf(session.get("original_filename"));
@@ -180,21 +170,19 @@ public class FileService {
         String digest;
         try {
             Map<Integer, String> checksums = new HashMap<>();
-            for (Map<String, Object> row : db.list("SELECT chunk_index, sha256 FROM upload_chunks WHERE session_id=?", uploadId)) {
+            for (Map<String, Object> row : fileAssets.listChecksums(uploadId)) {
                 checksums.put(((Number) row.get("chunk_index")).intValue(), String.valueOf(row.get("sha256")));
             }
             digest = storage.mergeChunks(uploadId, totalChunks, key, checksums);
         } catch (RuntimeException exception) {
-            db.update("UPDATE upload_sessions SET status='uploading', updated_at=? WHERE id=?",
-                    Instant.now().toString(), uploadId);
+            fileAssets.restoreUploading(Instant.now().toString(), uploadId);
             throw exception;
         }
 
         String expected = (String) session.get("file_sha256");
         if (expected != null && !Sha256.matches(expected, digest)) {
             storage.delete(key);
-            db.update("UPDATE upload_sessions SET status='failed', updated_at=? WHERE id=?",
-                    Instant.now().toString(), uploadId);
+            fileAssets.markFailed(Instant.now().toString(), uploadId);
             throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
                     "整文件 SHA-256 校验失败（期望 " + expected.substring(0, 12) + "…，实际 "
                             + digest.substring(0, 12) + "…），请重新上传");
@@ -202,13 +190,9 @@ public class FileService {
 
         String fileId = Ids.shortId();
         long size = ((Number) session.get("size_bytes")).longValue();
-        db.update("INSERT INTO file_assets(id, todo_id, account_id, storage_key, original_filename, " +
-                        "content_type, size_bytes, created_at, sha256, upload_id, upload_mode) " +
-                        "VALUES(?,NULL,?,?,?,?,?,?,?,?, 'chunked')",
-                fileId, account.id(), key, filename, session.get("content_type"), size,
+        fileAssets.insertChunkedAsset(fileId, account.id(), key, filename, session.get("content_type"), size,
                 Instant.now().toString(), digest, uploadId);
-        db.update("UPDATE upload_sessions SET status='done', updated_at=? WHERE id=?",
-                Instant.now().toString(), uploadId);
+        fileAssets.markDone(Instant.now().toString(), uploadId);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override public void afterCommit() { storage.deleteUpload(uploadId); }
@@ -232,8 +216,7 @@ public class FileService {
     public void abort(AccountPrincipal account, String uploadId) {
         Map<String, Object> session = lockedSession(account, uploadId);
         if ("done".equals(session.get("status"))) throw ApiException.badRequest("已完成的文件请从文件列表删除");
-        db.update("UPDATE upload_sessions SET status='aborted', updated_at=? WHERE id=?",
-                Instant.now().toString(), uploadId);
+        fileAssets.markAborted(Instant.now().toString(), uploadId);
         storage.deleteUpload(uploadId);
     }
 
@@ -261,10 +244,7 @@ public class FileService {
                     digest = Sha256.of(storage.pathOf(key));
                 }
                 String fileId = Ids.shortId();
-                db.update("INSERT INTO file_assets(id, todo_id, account_id, storage_key, original_filename, " +
-                                "content_type, size_bytes, created_at, sha256, upload_mode) " +
-                                "VALUES(?,NULL,?,?,?,?,?,?,?, 'batch')",
-                        fileId, account.id(), key, filename, file.getContentType(), file.getSize(),
+                fileAssets.insertBatchAsset(fileId, account.id(), key, filename, file.getContentType(), file.getSize(),
                         Instant.now().toString(), digest);
                 item.put("ok", true);
                 item.put("file_id", fileId);
@@ -282,12 +262,11 @@ public class FileService {
     }
 
     public List<Map<String, Object>> list(AccountPrincipal account) {
-        return db.list("SELECT id, original_filename, size_bytes, content_type, sha256, upload_mode, created_at " +
-                "FROM file_assets WHERE account_id=? ORDER BY created_at DESC LIMIT 200", account.id());
+        return fileAssets.listAssets(account.id());
     }
 
     public Map<String, Object> owned(AccountPrincipal account, String fileId) {
-        Map<String, Object> asset = db.one("SELECT * FROM file_assets WHERE id=?", fileId)
+        Map<String, Object> asset = fileAssets.findAsset(fileId)
                 .orElseThrow(() -> ApiException.notFound("文件不存在"));
         if (!account.isManager() && !account.id().equals(String.valueOf(asset.get("account_id")))) {
             throw ApiException.forbidden("无权访问该文件");
@@ -305,13 +284,13 @@ public class FileService {
             throw ApiException.forbidden("无权删除该文件");
         }
         storage.delete(String.valueOf(asset.get("storage_key")));
-        db.update("DELETE FROM file_assets WHERE id=?", fileId);
+        fileAssets.deleteAsset(fileId);
     }
 
     // ------------------------------------------------------------ helpers
 
     private Map<String, Object> session(AccountPrincipal account, String uploadId) {
-        Map<String, Object> session = db.one("SELECT * FROM upload_sessions WHERE id=?", uploadId)
+        Map<String, Object> session = fileAssets.findUpload(uploadId)
                 .orElseThrow(() -> ApiException.notFound("上传任务不存在"));
         if (!account.id().equals(String.valueOf(session.get("account_id")))) {
             throw ApiException.forbidden("无权访问该上传任务");
@@ -320,14 +299,14 @@ public class FileService {
     }
 
     private Map<String, Object> lockedSession(AccountPrincipal account, String uploadId) {
-        Map<String, Object> session = db.one("SELECT * FROM upload_sessions WHERE id=? FOR UPDATE", uploadId)
+        Map<String, Object> session = fileAssets.lockUpload(uploadId)
                 .orElseThrow(() -> ApiException.notFound("上传任务不存在"));
         if (!account.id().equals(String.valueOf(session.get("account_id")))) throw ApiException.forbidden("无权访问该上传任务");
         return session;
     }
 
     private List<Integer> uploadedIndexes(String uploadId) {
-        return db.list("SELECT chunk_index FROM upload_chunks WHERE session_id=? ORDER BY chunk_index", uploadId)
+        return fileAssets.listChunkIndexes(uploadId)
                 .stream().map(row -> ((Number) row.get("chunk_index")).intValue()).toList();
     }
 
@@ -342,9 +321,7 @@ public class FileService {
     }
 
     private void requireQuota(AccountPrincipal account, long incoming) {
-        long used = ((Number) db.required(
-                "SELECT COALESCE(SUM(size_bytes),0) AS used FROM file_assets WHERE account_id=?",
-                account.id()).get("used")).longValue();
+        long used = fileAssets.storageUsed(account.id());
         long quota = (long) properties.userStorageQuotaMb() * 1024 * 1024;
         if (used + incoming > quota) {
             throw ApiException.badRequest("超出个人存储配额（已用 " + used / 1024 / 1024 + "MB，上限 "

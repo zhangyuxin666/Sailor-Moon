@@ -12,6 +12,14 @@ interface Metric { label: string; value: string | number; hint?: string }
 export default function Portal() {
   const { account } = useAuth();
   const isManager = account?.role === 'manager';
+  const { data: saved, loading: favoritesLoading, error: favoritesError, reload: reloadFavorites } = useApi<{
+    favorites: { id: string; title: string; owned: boolean }[];
+  }>(() => api('/me/favorites'), [account?.id]);
+  const { data: interests, loading: interestsLoading, error: interestsError, reload: reloadInterests } = useApi<{
+    features: { category: string; score: number }[];
+    recommendations: { id: string; title: string; score: number }[];
+    recommendation_preview: boolean;
+  }>(() => api('/behavior/overview'), [account?.id]);
   const { data: dashboard, loading, error, reload } = useApi<DashboardData>(
     () => api<DashboardData>('/portal/dashboard'), []);
   const { data: draftsData, loading: draftsLoading, error: draftsError, reload: reloadDrafts } = useApi<DraftListResponse>(
@@ -40,8 +48,7 @@ export default function Portal() {
     ];
 
   return (
-    <>
-      <Notifications />
+    <div className="portal-screen">
       <header className="ws-header"><div>
         <p className="ws-kicker">DASHBOARD</p><h1>总览</h1>
         <p>班级作业、待办和活动进度一目了然。</p>
@@ -53,7 +60,10 @@ export default function Portal() {
             <span>{metric.label}</span><strong>{metric.value}</strong>{metric.hint && <em>{metric.hint}</em>}
           </article>)}
         </section>
-        <div className="ws-grid">
+      </>}
+      <div className="portal-columns">
+        <div className="portal-primary">
+          {!loading && !error && dashboard && <>
           <section className="ws-panel">
             <div className="ws-panel-title"><div><h2>最近作业与待办</h2><p>班级作业和提交情况</p></div>
               <Link className="ws-button light" to="/assignments">查看全部</Link></div>
@@ -87,8 +97,36 @@ export default function Portal() {
               <Link className="ws-button light" to="/assignments">查看全部任务</Link></div>
             <ParticipantTasks tasks={activityTasks} onChanged={reload} limit={6} />
           </section>}
+          </>}
         </div>
-      </>}
-    </>
+        <aside className="portal-secondary" aria-label="通知、收藏与活动推荐">
+          <Notifications />
+          <section className="ws-panel">
+            <div className="ws-panel-title"><h2>我的收藏</h2></div>
+            <DataState loading={favoritesLoading} error={favoritesError} onRetry={reloadFavorites}
+              empty={!favoritesLoading && !favoritesError && !saved?.favorites.length} emptyText="暂无收藏活动" />
+            <div className="ws-list">{saved?.favorites.map(item =>
+              <Link className="ws-list-item" key={item.id} to={isManager && item.owned
+                ? `/activity/${encodeURIComponent(item.id)}` : `/participation?activity=${encodeURIComponent(item.id)}`}>
+                <strong>{item.title}</strong>
+              </Link>
+            )}</div>
+          </section>
+          <section className="ws-panel">
+            <div className="ws-panel-title">
+              <h2>活动兴趣与推荐</h2>
+              <button className="ws-button light" type="button" disabled={interestsLoading} onClick={reloadInterests}>刷新</button>
+            </div>
+            <DataState loading={interestsLoading} error={interestsError} onRetry={reloadInterests} />
+            <p>{interests?.features.map(({ category, score }) =>
+              `${({ technology: '技术', sports: '运动', culture: '文艺', general: '综合' } as Record<string, string>)[category] ?? category} ${score} 分`
+            ).join(' · ') || '浏览、点赞或收藏活动后，这里会显示兴趣分。'}</p>
+            {interests?.recommendations.length ? <><h3>{interests.recommendation_preview ? '活动推荐预览' : '今日推荐'}</h3><ul>{interests.recommendations.map(item =>
+              <li key={item.id}>{item.title}</li>
+            )}</ul></> : interests && <p>当前没有你可查看的已就绪活动。</p>}
+          </section>
+        </aside>
+      </div>
+    </div>
   );
 }

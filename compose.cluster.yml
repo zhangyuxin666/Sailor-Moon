@@ -24,6 +24,21 @@ services:
       timeout: 3s
       retries: 15
 
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-activity}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-activity}
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes: ["rabbitmq_data:/var/lib/rabbitmq"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   # ------------------------------------------------------------
   # FastAPI AI 服务：两个 Tomcat 共用一份 AI 服务。
   # ------------------------------------------------------------
@@ -67,6 +82,9 @@ services:
       DB_READ_USERNAME: activity_reader
       DB_READ_PASSWORD: ${DB_READ_PASSWORD:-}
       SPRING_DATASOURCE_PASSWORD: activity
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-activity}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-activity}
       # 两个 Tomcat 共享同一个 AI 服务。
       AI_SERVICE_URL: http://ai:8000
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN:-change-this-local-ai-token}
@@ -86,6 +104,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       ai: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
     healthcheck:
       # 数据库连得上且业务已就绪，Docker 才标记 app1 为 healthy。
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
@@ -114,6 +133,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       ai: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
       interval: 10s
@@ -171,3 +191,4 @@ volumes:
   qq_delivery_data:
   # PostgreSQL 数据持久化卷。
   postgres_data:
+  rabbitmq_data:

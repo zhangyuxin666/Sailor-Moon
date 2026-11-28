@@ -1,0 +1,51 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#555"/></marker><filter id="shadow"><feDropShadow dx="2" dy="3" stdDeviation="2" flood-opacity="0.18"/></filter></defs>
+<rect width="1400" height="850" fill="#FAFCF7"/><rect x="20" y="18" width="1360" height="82" rx="14" fill="#48693A"/>
+<text x="700" y="52" text-anchor="middle" font-family="Microsoft YaHei" font-size="28" font-weight="bold" fill="white">RAG索引与检索时序</text>
+<text x="700" y="80" text-anchor="middle" font-family="Microsoft YaHei" font-size="15" fill="#E9F2E4">组织隔离、向量来源一致性和可追溯引用</text>
+<line x1="140" y1="220" x2="140" y2="430" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="140" y1="430" x2="400" y2="430" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="400" y1="430" x2="660" y2="430" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="660" y1="430" x2="920" y2="430" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="920" y1="430" x2="1200" y2="430" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="140" y1="690" x2="400" y2="690" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="400" y1="690" x2="660" y2="690" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="660" y1="690" x2="920" y2="690" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="920" y1="690" x2="1200" y2="690" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="660" y1="430" x2="660" y2="220" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="660" y="318" text-anchor="middle" font-family="Microsoft YaHei" font-size="12" fill="#555">内部API</text>
+<line x1="920" y1="430" x2="920" y2="220" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="920" y="318" text-anchor="middle" font-family="Microsoft YaHei" font-size="12" fill="#555">远程或本地降级</text>
+<line x1="1200" y1="430" x2="1200" y2="220" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="1200" y="318" text-anchor="middle" font-family="Microsoft YaHei" font-size="12" fill="#555">pgvector</text>
+<rect x="40" y="180" width="200" height="80" rx="14" fill="#DDEBF7" stroke="#2E5F91" stroke-width="2" filter="url(#shadow)"/>
+<text x="140" y="220" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">管理员/Agent</text>
+<rect x="300" y="180" width="200" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="400" y="220" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">Spring Boot</text>
+<rect x="560" y="180" width="200" height="80" rx="14" fill="#EADFF4" stroke="#7030A0" stroke-width="2" filter="url(#shadow)"/>
+<text x="660" y="220" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">FastAPI</text>
+<rect x="820" y="180" width="200" height="80" rx="14" fill="#FCE4D6" stroke="#C65911" stroke-width="2" filter="url(#shadow)"/>
+<text x="920" y="220" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">Embedding服务</text>
+<rect x="1080" y="180" width="240" height="80" rx="14" fill="#FFF2CC" stroke="#BF9000" stroke-width="2" filter="url(#shadow)"/>
+<text x="1200" y="220" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">PostgreSQL/pgvector</text>
+<rect x="40" y="390" width="200" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="140" y="430" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">提交知识资料</text>
+<rect x="300" y="390" width="200" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="400" y="430" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">组织权限校验</text>
+<rect x="560" y="390" width="200" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="660" y="430" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">切分重叠chunks</text>
+<rect x="820" y="390" width="200" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="920" y="430" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">生成1536维向量</text>
+<rect x="1080" y="390" width="240" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="1200" y="430" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">保存资料/分片/版本</text>
+<rect x="40" y="650" width="200" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="140" y="690" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">策划或检索请求</text>
+<rect x="300" y="650" width="200" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="400" y="690" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">服务端确定组织</text>
+<rect x="560" y="650" width="200" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="660" y="690" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">查询向量 + Top-K</text>
+<rect x="820" y="650" width="200" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="920" y="690" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">片段/分数/来源</text>
+<rect x="1080" y="650" width="240" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="1200" y="690" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">草案保存引用快照</text>
+</svg>

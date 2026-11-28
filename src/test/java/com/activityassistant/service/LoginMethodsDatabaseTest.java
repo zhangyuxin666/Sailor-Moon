@@ -2,7 +2,10 @@ package com.activityassistant.service;
 
 import com.activityassistant.config.AppProperties;
 import com.activityassistant.config.LoginMethodProperties;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.AuthMapper;
+import com.activityassistant.persistence.mapper.LoginMethodMapper;
+import org.mybatis.spring.SqlSessionFactoryBean;
+import org.mybatis.spring.SqlSessionTemplate;
 import com.activityassistant.security.PasswordHasher;
 import com.activityassistant.support.ApiException;
 import org.junit.jupiter.api.AfterEach;
@@ -26,7 +29,7 @@ import static org.mockito.Mockito.*;
 class LoginMethodsDatabaseTest {
     private static final String PASSWORD = "test-password-123";
     private final LoginProviders providers = mock(LoginProviders.class);
-    private Db db;
+    private JdbcTemplate db;
     private AuthService auth;
     private LoginMethods methods;
     private String accountId;
@@ -34,15 +37,20 @@ class LoginMethodsDatabaseTest {
     private String address;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         var dataSource = new DriverManagerDataSource(System.getProperty("login.test.jdbc"),
                 System.getProperty("login.test.user", "activity"), System.getProperty("login.test.password", "activity"));
-        db = new Db(new JdbcTemplate(dataSource));
+        db = new JdbcTemplate(dataSource);
         var app = mock(AppProperties.class);
         when(app.sessionDays()).thenReturn(7);
         var passwords = new PasswordHasher();
-        auth = new AuthService(db, passwords, app, mock(AuditService.class));
-        methods = new LoginMethods(db, auth, passwords, providers,
+        var factoryBean = new SqlSessionFactoryBean();
+        factoryBean.setDataSource(dataSource);
+        var factory = java.util.Objects.requireNonNull(factoryBean.getObject());
+        factory.getConfiguration().addMapper(AuthMapper.class);
+        factory.getConfiguration().addMapper(LoginMethodMapper.class);
+        auth = new AuthService(new SqlSessionTemplate(factory).getMapper(AuthMapper.class), passwords, app, mock(AuditService.class));
+        methods = new LoginMethods(new SqlSessionTemplate(factory).getMapper(LoginMethodMapper.class), auth, passwords, providers,
                 new LoginMethodProperties("", "", "test-key", "test-secret", "test-sign", "test-template", ""),
                 new DataSourceTransactionManager(dataSource));
         address = UUID.randomUUID().toString();

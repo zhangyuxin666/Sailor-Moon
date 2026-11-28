@@ -113,4 +113,4 @@ TemplateService 将可复用蓝图与活动执行数据分开存储；历史来�
 
 ## 可选数据库读写分离
 
-默认双 Tomcat 共用单主库；叠加 `compose.replication.yml` 并启用 `DB_READ_ENABLED` 后，新增物理流复制从库。每个 Tomcat 的默认 JDBC 连接仍指向主库，`ReplicaReads` 单独管理只读连接池。活动列表、步骤/投递/变更记录和通知查询显式使用 `Db.readList`，先检查主库 WAL 同步屏障；复制落后或断开时回主库。所有事务与权限校验保持主库，AI/RAG 仍连接主库。该方案没有自动主库选举，具体边界见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。
+默认双 Tomcat 共用单主库；叠加 `compose.replication.yml` 并启用 `DB_READ_ENABLED` 后，新增物理流复制从库。每个 Tomcat 的默认 JDBC 连接仍指向主库，`ReplicaReads` 单独管理只读连接池。活动列表、步骤/投递/变更记录和通知查询显式使用 `ReplicaReads.readMapper`，先检查主库 WAL 同步屏障；复制落后或断开时回主库。所有事务与权限校验保持主库，AI/RAG 仍连接主库。该方案没有自动主库选举，具体边界见 [READ_WRITE_SPLIT.md](READ_WRITE_SPLIT.md)。

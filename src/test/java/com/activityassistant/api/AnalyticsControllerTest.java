@@ -2,6 +2,7 @@ package com.activityassistant.api;
 
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.service.AnalyticsService;
+import com.activityassistant.service.AnalyticsStreamService;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
@@ -16,7 +17,7 @@ class AnalyticsControllerTest {
     @Test
     void forwardsAuthenticatedManagerAndFiltersToService() {
         AnalyticsService service = mock(AnalyticsService.class);
-        AnalyticsController controller = new AnalyticsController(service);
+        AnalyticsController controller = new AnalyticsController(service, mock(AnalyticsStreamService.class));
         AccountPrincipal manager = new AccountPrincipal("a1", "manager", "管理员", null,
                 "manager", "active", "2026-01-01", 0);
         var authentication = new UsernamePasswordAuthenticationToken(manager, "token");

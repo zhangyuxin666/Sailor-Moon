@@ -38,7 +38,7 @@ docker compose -f compose.cluster.yml -f compose.replication.yml up -d --build
 - 主库：所有增删改、登录会话、账号/组织/班级权限校验、报名容量与回执、签到反馈、任务状态、工作流租约、复盘生成和历史、CSV 一致性导出、Flyway 迁移、AI 知识库访问。
 - 所有 Spring 事务保持主库连接，包括只读事务；不按 HTTP GET 或 SQL 文本自动猜测分流。
 
-实现入口是 `Db.readList` 和 `ReplicaReads`。现有 `Db.one/list/update` 始终使用主库。活动列表的权限条件也包含在其查询中；分流前取得主库 WAL 位置作为同步屏障，确保从库已包含该时刻前提交的权限及业务变化。
+显式从库读取通过 `ReplicaReads.readMapper` 执行。默认注入的 MyBatis Mapper 使用主库。活动列表的权限条件也包含在其查询中；分流前取得主库 WAL 位置作为同步屏障，确保从库已包含该时刻前提交的权限及业务变化。
 
 每次分流先在主库取得 `pg_current_wal_lsn()`，再在同一只读从库连接上检查 `pg_is_in_recovery()` 和 `pg_last_wal_replay_lsn()`，确认追上后才查询；检查与查询使用 READ COMMITTED。落后、查询错误、从库不可达或从库已被提升为主库时，直接读取主库。应用不会返回“报名成功但刚提交的数据消失”的旧快照，也不把事务内未提交的数据交给从库。主库屏障查询仍有少量开销，这种方案优先保证课程项目的正确性，并非所有查询都能卸载。
 

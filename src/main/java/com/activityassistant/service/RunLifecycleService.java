@@ -2,7 +2,7 @@ package com.activityassistant.service;
 
 import com.activityassistant.orchestration.AgentResult;
 import com.activityassistant.orchestration.RunStatus;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.RunLifecycleMapper;
 import com.activityassistant.support.ApiException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -23,11 +23,11 @@ import java.util.Set;
 public class RunLifecycleService {
     private static final Set<String> INPUT_KEYS = Set.of("title", "description", "event_time",
             "form_fields", "materials", "tasks", "remind_minutes_before", "answers");
-    private final Db db;
+    private final RunLifecycleMapper lifecycle;
     private final ObjectMapper mapper;
 
-    public RunLifecycleService(Db db, ObjectMapper mapper) {
-        this.db = db;
+    public RunLifecycleService(RunLifecycleMapper lifecycle, ObjectMapper mapper) {
+        this.lifecycle = lifecycle;
         this.mapper = mapper;
     }
 
@@ -52,10 +52,8 @@ public class RunLifecycleService {
         List<String> missing = remainingMissing(run, plan, mergedInput);
         AgentResult result = waitingResult(activityId, missing);
         String now = LocalDateTime.now().toString();
-        db.update("UPDATE activities SET title=?, plan_json=? WHERE id=?",
-                plan.path("title").asText(), plan.toString(), activityId);
-        db.update("UPDATE agent_runs SET input_json=?, plan_json=?, resolution_json=?, updated_at=? WHERE id=?",
-                mergedInput.toString(), plan.toString(), json(result), now, runId);
+        lifecycle.saveActivityPlan(plan.path("title").asText(), plan.toString(), activityId);
+        lifecycle.saveInput(mergedInput.toString(), plan.toString(), json(result), now, runId);
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("run_id", runId);
@@ -77,7 +75,7 @@ public class RunLifecycleService {
         if (!status.canTransitionTo(RunStatus.PENDING))
             throw ApiException.badRequest("当前状态不能恢复: " + status.wire());
 
-        Map<String, Object> job = db.one("SELECT status FROM background_jobs WHERE id=? FOR UPDATE", runId)
+        Map<String, Object> job = lifecycle.lockJob(runId)
                 .orElseThrow(() -> ApiException.notFound("后台任务不存在"));
         if ("running".equals(job.get("status")))
             throw ApiException.badRequest("后台任务仍在收尾，请稍后再恢复");
@@ -91,20 +89,15 @@ public class RunLifecycleService {
             List<String> missing = remainingMissing(run, plan, input);
             if (!missing.isEmpty())
                 throw ApiException.badRequest("仍需补充信息：" + String.join("；", missing));
-            db.update("UPDATE activities SET title=?, plan_json=? WHERE id=?",
-                    plan.path("title").asText(), plan.toString(), activityId);
-            db.update("UPDATE agent_runs SET plan_json=?, updated_at=? WHERE id=?",
-                    plan.toString(), LocalDateTime.now().toString(), runId);
+            lifecycle.saveActivityPlan(plan.path("title").asText(), plan.toString(), activityId);
+            lifecycle.saveRunPlan(plan.toString(), LocalDateTime.now().toString(), runId);
         }
 
         String now = LocalDateTime.now().toString();
-        db.update("UPDATE agent_runs SET status='pending', phase='planning', resolution_json=NULL, error=NULL, updated_at=? " +
-                "WHERE id=? AND status IN ('waiting_input','failed')", now, runId);
-        db.update("UPDATE activities SET status='queued' WHERE id=?", activityId);
+        lifecycle.resetRun(now, runId);
+        lifecycle.queueActivity(activityId);
         // Explicit manual recovery starts a fresh bounded retry budget; successful business steps remain cached.
-        int changed = db.update("UPDATE background_jobs SET status='queued', attempts=0, next_attempt_at=NULL, started_at=NULL, " +
-                        "finished_at=NULL, heartbeat_at=NULL, locked_by=NULL, error=NULL, updated_at=? " +
-                        "WHERE id=? AND status<>'running'", now, runId);
+        int changed = lifecycle.resetJob(now, runId);
         if (changed != 1) throw ApiException.badRequest("后台任务状态已变化，请刷新后重试");
         return resumeResponse(runId, RunStatus.PENDING, false);
     }
@@ -112,13 +105,9 @@ public class RunLifecycleService {
     @Transactional
     public void pauseForInput(String runId, String activityId, List<String> missingInformation) {
         String now = LocalDateTime.now().toString();
-        db.update("UPDATE agent_runs SET status='waiting_input', phase='planning', resolution_json=?, " +
-                        "error=NULL, updated_at=? WHERE id=?",
-                json(waitingResult(activityId, missingInformation)), now, runId);
-        db.update("UPDATE activities SET status='waiting_input' WHERE id=?", activityId);
-        db.update("UPDATE background_jobs SET status='succeeded', finished_at=?, error=NULL, " +
-                        "locked_by=NULL, heartbeat_at=NULL, updated_at=? WHERE id=?",
-                now, now, runId);
+        lifecycle.waitForInput(json(waitingResult(activityId, missingInformation)), now, runId);
+        lifecycle.waitActivity(activityId);
+        lifecycle.finishJob(now, now, runId);
     }
 
     private void mergeInput(ObjectNode merged, JsonNode patch) {
@@ -201,15 +190,15 @@ public class RunLifecycleService {
     }
 
     private Map<String, Object> requireRun(String runId) {
-        Map<String,Object> ref=db.one("SELECT * FROM agent_runs WHERE id=?",runId).orElseThrow(()->ApiException.notFound("运行不存在"));
-        Map<String,Object> activity=db.one("SELECT status FROM activities WHERE id=? FOR UPDATE",ref.get("ref_id")).orElseThrow(()->ApiException.notFound("活动不存在"));
+        Map<String,Object> ref=lifecycle.findRun(runId).orElseThrow(()->ApiException.notFound("运行不存在"));
+        Map<String,Object> activity=lifecycle.lockActivityStatus((String) ref.get("ref_id")).orElseThrow(()->ApiException.notFound("活动不存在"));
         if("cancelled".equals(activity.get("status")))throw ApiException.badRequest("活动已取消，不能恢复或补充");
-        return db.one("SELECT * FROM agent_runs WHERE id=? FOR UPDATE", runId)
+        return lifecycle.lockRun(runId)
                 .orElseThrow(() -> ApiException.notFound("运行记录不存在: " + runId));
     }
 
     private Map<String, Object> requireActivity(String activityId) {
-        return db.one("SELECT title, raw_input, plan_json FROM activities WHERE id=? FOR UPDATE", activityId)
+        return lifecycle.lockActivityPlan(activityId)
                 .orElseThrow(() -> ApiException.notFound("活动不存在"));
     }
 

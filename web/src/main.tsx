@@ -1,6 +1,5 @@
 /**
- * 应用入口
- * 挂载 React 根组件，包裹 AuthProvider 和 ToastProvider。
+ * 应用入口：挂载 React 根组件，包裹 AuthProvider 与 ToastProvider。
  */
 import React from 'react';
 import ReactDOM from 'react-dom/client';

@@ -2,7 +2,7 @@ package com.activityassistant.orchestration;
 
 import com.activityassistant.config.AppProperties;
 import com.activityassistant.integration.AiClient;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.ActivityWorkflowMapper;
 import com.activityassistant.service.AgentRunService;
 import com.activityassistant.service.QqService;
 import com.activityassistant.service.ActivityGate;
@@ -41,7 +41,7 @@ import java.util.HashSet;
  */
 @Service
 public class ActivityOrchestrator {
-    private final Db db;
+    private final ActivityWorkflowMapper workflowData;
     private final AgentRunService agentRuns;
     private final AiClient ai;
     private final QqService qq;
@@ -53,9 +53,9 @@ public class ActivityOrchestrator {
     @org.springframework.beans.factory.annotation.Autowired
     public void deliveryLog(com.activityassistant.service.DeliveryLogService service){deliveryLog=service;}
 
-    public ActivityOrchestrator(Db db, AgentRunService agentRuns, AiClient ai, QqService qq,
+    public ActivityOrchestrator(ActivityWorkflowMapper workflowData, AgentRunService agentRuns, AiClient ai, QqService qq,
                                 ObjectMapper mapper, AppProperties properties, ExecutionJournal journal, ActivityGate gate) {
-        this.db = db;
+        this.workflowData = workflowData;
         this.agentRuns = agentRuns;
         this.ai = ai;
         this.qq = qq;
@@ -71,16 +71,16 @@ public class ActivityOrchestrator {
     public Map<String,Object> run(String activityId) {
         try {
             Map<String,Object> activity=guarded(activityId,false,()->{
-                var row=db.one("SELECT * FROM activities WHERE id=?",activityId).orElseThrow(()->ApiException.notFound("活动不存在"));
-                db.update("UPDATE activities SET status='running' WHERE id=?",activityId);agentRuns.start(activityId);return row;
+                var row=workflowData.findActivity(activityId).orElseThrow(()->ApiException.notFound("活动不存在"));
+                workflowData.markRunning(activityId);agentRuns.start(activityId);return row;
             });
             var result=orchestrate(activity);
             if("waiting_input".equals(result.get("status")))return result;
-            return guarded(activityId,false,()->{db.update("UPDATE activities SET status='ready' WHERE id=?",activityId);agentRuns.complete(activityId,result);return result;});
+            return guarded(activityId,false,()->{workflowData.markReady(activityId);agentRuns.complete(activityId,result);return result;});
         } catch(ActivityGate.CancelledFlow cancelled){return Map.of("activity_id",activityId,"status","cancelled");}
         catch(JobLease.Lost lost){throw lost;}
         catch(RuntimeException error) {
-            try {guarded(activityId,false,()->{db.update("UPDATE activities SET status='failed' WHERE id=?",activityId);agentRuns.fail(activityId,error);return null;});}
+            try {guarded(activityId,false,()->{workflowData.markFailed(activityId);agentRuns.fail(activityId,error);return null;});}
             catch(ActivityGate.CancelledFlow cancelled){return Map.of("activity_id",activityId,"status","cancelled");}
             throw error;
         }
@@ -90,13 +90,10 @@ public class ActivityOrchestrator {
         String activityId = String.valueOf(activity.get("id"));
         // 学习点: 先准备 Flow 所需上下文：流程开关、班级、可分配成员。
         JsonNode workflow = workflow(activityId);
-        Map<String, Object> scope = db.one(
-                "SELECT class_id, organization_id FROM activity_classes WHERE activity_id=?", activityId).orElse(Map.of());
+        Map<String, Object> scope = workflowData.findScope(activityId).orElse(Map.of());
         String classId = scope.get("class_id") == null ? null : String.valueOf(scope.get("class_id"));
         String organizationId = scope.get("organization_id") == null ? null : String.valueOf(scope.get("organization_id"));
-        List<Map<String, Object>> assignees = classId == null ? List.of() : db.list(
-                "SELECT a.id AS account_id, a.display_name FROM class_members cm JOIN accounts a ON a.id=cm.account_id " +
-                        "WHERE cm.class_id=? AND a.status='active' ORDER BY a.student_no, a.id", classId);
+        List<Map<String, Object>> assignees = classId == null ? List.of() : workflowData.listAssignees(classId);
 
         guarded(activityId,false,()->{agentRuns.phase(activityId,"planning");return null;});
         // 学习点: plan_json 已存在时直接复用，这是重跑不再调用 AI 的第一层原因。
@@ -116,7 +113,7 @@ public class ActivityOrchestrator {
         String title = plan.path("title").asText(String.valueOf(activity.get("title")));
         JsonNode confirmedPlan=plan;
         guarded(activityId,false,()->{
-        db.update("UPDATE activities SET title=?, plan_json=? WHERE id=?", title, confirmedPlan.toString(), activityId);
+        workflowData.savePlan(title, confirmedPlan.toString(), activityId);
         agentRuns.planned(activityId, confirmedPlan);
         journal.record(activityId, "planning", "generate_plan", "done",
                 "confirmed_draft".equals(confirmedPlan.path("plan_source").asText()) ? "使用已确认方案：" + title : title,
@@ -126,7 +123,7 @@ public class ActivityOrchestrator {
         });
 
         if(plan.path("event_time").asText().isBlank() && (plan.path("requires_event_time").asBoolean(false)||flag(workflow,"create_calendar",false)||flag(workflow,"schedule_reminder",false))) {
-            guarded(activityId,false,()->{db.update("UPDATE activities SET status='waiting_input' WHERE id=?",activityId);agentRuns.waiting(activityId);return null;});
+            guarded(activityId,false,()->{workflowData.markWaiting(activityId);agentRuns.waiting(activityId);return null;});
             return Map.of("activity_id",activityId,"status","waiting_input");
         }
         Flow flow = new Flow(activityId, workflow, classId, assignees, plan, title);
@@ -165,8 +162,7 @@ public class ActivityOrchestrator {
             if (!hasName) fields.insert(0, mapper.createObjectNode().put("name", "name").put("label", "姓名"));
             if (!hasContact) fields.insert(Math.min(1, fields.size()),
                     mapper.createObjectNode().put("name", "contact").put("label", "联系方式"));
-            db.update("INSERT INTO forms (id, activity_id, title, fields_json, created_at) VALUES (?, ?, ?, ?, ?)",
-                    formId, flow.activityId(), flow.title() + "报名表", fields.toString(), LocalDateTime.now().toString());
+            workflowData.insertForm(formId, flow.activityId(), flow.title() + "报名表", fields.toString(), LocalDateTime.now().toString());
             journal.save(key, "create_form", Map.of("form_id", formId));
         } else {
             formId = String.valueOf(old.get("form_id"));
@@ -188,9 +184,9 @@ public class ActivityOrchestrator {
             String key=taskKey(task,index);
             if(!key.matches("[A-Za-z0-9_-]{1,40}") || ids.containsKey(key))throw ApiException.badRequest("任务标识无效或重复");
             String planKey="plan:"+index++;
-            Map<String,Object> old=db.one("SELECT * FROM tasks WHERE activity_id=? AND plan_key=?",flow.activityId(),planKey).orElse(null);
+            Map<String,Object> old=workflowData.findTask(flow.activityId(),planKey).orElse(null);
             if(old==null && !task.path("account_id").asText().isBlank()) {
-                var legacy=db.list("SELECT t.id FROM tasks t JOIN activity_task_assignees ata ON ata.task_id=t.id WHERE t.activity_id=? AND t.title=? AND ata.account_id=? AND t.plan_key LIKE 'legacy:%'",flow.activityId(),task.path("title").asText(),task.path("account_id").asText());
+                var legacy=workflowData.listLegacyTasks(flow.activityId(),task.path("title").asText(),task.path("account_id").asText());
                 if(legacy.size()>1)throw ApiException.badRequest("历史任务关联不唯一，请确认原任务后再恢复");
                 if(legacy.size()==1)old=legacy.get(0);
             }
@@ -210,22 +206,21 @@ public class ActivityOrchestrator {
             String account=task.path("account_id").asText(),name=task.path("assignee").asText("待分配");
             if(existing.get(key)==null) {
                 String deadline=task.path("deadline").asText("");if(!deadline.isBlank())deadline=Times.instant(deadline,properties.timezone()).toString();else deadline=null;
-                db.update("INSERT INTO tasks (id, activity_id, title, assignee, status, created_at, description, deadline, priority, plan_key, unassigned_reason) VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)",
-                    id,flow.activityId(),task.path("title").asText(),name,LocalDateTime.now().toString(),task.path("description").asText(""),deadline,task.path("priority").asText("normal"),planKey,account.isBlank()?task.path("unassigned_reason").asText("尚未指定负责人"):null);
-                if(!account.isBlank())db.update("INSERT INTO activity_task_assignees (task_id, account_id) VALUES (?, ?)",id,account);
+                workflowData.insertTask(id,flow.activityId(),task.path("title").asText(),name,LocalDateTime.now().toString(),task.path("description").asText(""),deadline,task.path("priority").asText("normal"),planKey,account.isBlank()?task.path("unassigned_reason").asText("尚未指定负责人"):null);
+                if(!account.isBlank())workflowData.assignTask(id,account);
                 created.add(id);
-            } else db.update("UPDATE tasks SET plan_key=? WHERE id=? AND (plan_key IS NULL OR plan_key LIKE 'legacy:%')",planKey,id);
+            } else workflowData.linkPlanKey(planKey,id);
             if(account.isBlank())continue;
             String content="【"+flow.title()+"】你被分配了任务「"+task.path("title").asText()+"」，活动时间 "+flow.plan().path("event_time").asText()+"，请及时完成。";
             String messageKey="msg:"+flow.activityId()+":"+id;
             String legacyKey="msg:"+flow.activityId()+":"+UUID.nameUUIDFromBytes((account+":"+task.path("title").asText()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             if(journal.find(messageKey,"send_message")==null && journal.find(legacyKey,"send_message")==null) {
-                db.update("INSERT INTO messages (activity_id, recipient, content, created_at, recipient_account_id) VALUES (?, ?, ?, ?, ?)",flow.activityId(),name,content,LocalDateTime.now().toString(),account);
+                workflowData.insertMessage(flow.activityId(),name,content,LocalDateTime.now().toString(),account);
                 journal.save(messageKey,"send_message",Map.of("status","sent"));
             }
             assigned++;
         }
-        for(var entry:graph.entrySet())if(created.contains(entry.getKey()))for(String dep:entry.getValue())db.update("INSERT INTO task_dependencies(task_id,depends_on_id) VALUES (?,?)",entry.getKey(),dep);
+        for(var entry:graph.entrySet())if(created.contains(entry.getKey()))for(String dep:entry.getValue())workflowData.insertDependency(entry.getKey(),dep);
         journal.record(flow.activityId(),"execution","assign_tasks","done",assigned+" 项已分配，"+(planned.size()-assigned)+" 项待分配","tasks:"+flow.activityId(),flow.plan().path("tasks"),Map.of("requested_count",planned.size(),"assigned_count",assigned),null);
     }
 
@@ -255,8 +250,7 @@ public class ActivityOrchestrator {
         Instant remindAt = Times.instant(eventTime, properties.timezone()).minusSeconds(remindMinutesBefore * 60);
         String time = LocalDateTime.ofInstant(remindAt, java.time.ZoneId.of(properties.timezone())).toString();
         // 学习点: 同一活动、同一提醒时间只复用一条提醒；数据库唯一约束还会再做一层兜底。
-        Map<String, Object> old = db.one("SELECT * FROM reminders WHERE activity_id=? AND remind_at=?",
-                flow.activityId(), time).orElse(null);
+        Map<String, Object> old = workflowData.findReminder(flow.activityId(), time).orElse(null);
         String reminderId;
         if (old == null) {
             reminderId = Ids.shortId();
@@ -264,8 +258,7 @@ public class ActivityOrchestrator {
             flow.plan().path("materials").forEach(node -> materials.add(node.asText()));
             String message = "活动「" + flow.title() + "」将于 " + eventTime + " 开始。";
             if (!materials.isEmpty()) message += "请准备物料：" + String.join("、", materials) + "。";
-            db.update("INSERT INTO reminders (id, activity_id, message, remind_at, status, created_at) VALUES (?, ?, ?, ?, 'scheduled', ?)",
-                    reminderId, flow.activityId(), message, time, LocalDateTime.now().toString());
+            workflowData.insertReminder(reminderId, flow.activityId(), message, time, LocalDateTime.now().toString());
         } else {
             reminderId = String.valueOf(old.get("id"));
         }
@@ -278,7 +271,7 @@ public class ActivityOrchestrator {
 
     private Map<String, Object> deliver(Flow flow, String formId, String reminderId) {
         // 学习点: delivery 阶段负责外部投递；没有 QQ 群时仍要记录业务结果已经就绪。
-        String group = db.one("SELECT group_openid FROM activity_channels WHERE activity_id=?", flow.activityId())
+        String group = workflowData.findChannel(flow.activityId())
                 .map(row -> String.valueOf(row.get("group_openid"))).orElse(null);
         boolean publishRequested = flag(flow.workflow(), "publish_message", true)
                 && requested(flow.plan(), "publish_message");
@@ -317,12 +310,12 @@ public class ActivityOrchestrator {
     private Map<String,Object> sendGroupMessageUnchecked(String activityId,String group,String content,String kind,String key) {
         // 学习点: 外部副作用之前先查幂等结果；命中就说明这条消息以前已经成功发过。
         if(deliveryLog!=null) {
-            var original=db.one("SELECT target,content FROM delivery_events WHERE logical_key=?",key).orElse(null);
+            var original=workflowData.findOriginalDelivery(key).orElse(null);
             if(original!=null&&(!group.equals(original.get("target"))||!content.equals(original.get("content"))))throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,"投递标识已用于不同内容");
         }
         Map<String,Object> cached=journal.find(key,"send_qq_group_message");
         if(cached!=null)return cached;
-        String organizationId = db.one("SELECT organization_id FROM activity_classes WHERE activity_id=?", activityId)
+        String organizationId = workflowData.findOrganization(activityId)
                 .map(row -> String.valueOf(row.get("organization_id"))).orElse(null);
         if (!qq.isGroupAuthorized(organizationId, group)) {
             throw ApiException.forbidden("活动 QQ 群绑定已失效，请重新选择授权群");
@@ -373,10 +366,7 @@ public class ActivityOrchestrator {
             if (accountId.isBlank() && storedPlan) {
                 // Legacy plans may only reuse an existing authoritative relationship.
                 // Never infer a new account from a name, even when it appears unique.
-                List<Map<String, Object>> existing = db.list(
-                        "SELECT DISTINCT ata.account_id FROM tasks t JOIN activity_task_assignees ata ON ata.task_id=t.id " +
-                                "WHERE t.activity_id=? AND t.title=? AND t.assignee=?",
-                        activityId, task.path("title").asText(), task.path("assignee").asText());
+                List<Map<String, Object>> existing = workflowData.listPriorAssignees(activityId, task.path("title").asText(), task.path("assignee").asText());
                 if (existing.size() == 1) accountId = String.valueOf(existing.get(0).get("account_id"));
             }
             if (!namesById.containsKey(accountId)) {
@@ -389,7 +379,7 @@ public class ActivityOrchestrator {
     }
 
     private JsonNode workflow(String activityId) {
-        return db.one("SELECT config_json FROM activity_workflows WHERE activity_id=?", activityId)
+        return workflowData.findWorkflow(activityId)
                 .map(row -> parse(String.valueOf(row.get("config_json")))).orElseGet(() -> {
                     ObjectNode node = mapper.createObjectNode();
                     node.put("create_form", true).put("assign_tasks", true).put("create_calendar", true)

@@ -13,6 +13,19 @@ services:
       timeout: 3s
       retries: 15
 
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes: ["rabbitmq_data:/var/lib/rabbitmq"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
   ai:
     build:
       context: .
@@ -48,6 +61,9 @@ services:
       DB_READ_USERNAME: activity_reader
       DB_READ_PASSWORD: ${DB_READ_PASSWORD:-}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       AI_SERVICE_URL: http://ai:8000
       AI_INTERNAL_TOKEN: ${AI_INTERNAL_TOKEN}
       QQ_GATEWAY_URL: http://qq-gateway:3000
@@ -58,6 +74,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       ai: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health/ready >/dev/null || exit 1"]
       interval: 15s
@@ -101,6 +118,7 @@ services:
 volumes:
   qq_delivery_data:
   postgres_data:
+  rabbitmq_data:
   uploads_data:
   caddy_data:
   caddy_config:

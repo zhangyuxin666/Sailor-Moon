@@ -1,30 +1,40 @@
 package com.activityassistant.persistence;
 
 import com.zaxxer.hikari.HikariConfig;
+import com.activityassistant.persistence.mapper.ReplicationMapper;
+import org.mybatis.spring.SqlSessionTemplate;
+import org.mybatis.spring.SqlSessionFactoryBean;
 import com.zaxxer.hikari.HikariDataSource;
+import com.activityassistant.persistence.mapper.ManagementMapper;
+import com.activityassistant.persistence.mapper.ActivityManagementMapper;
+import com.activityassistant.persistence.mapper.ActivityMapper;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
-import javax.sql.DataSource;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Supplier;
 
-/** Explicit opt-in reads only. All ordinary Db operations and transactions stay on primary. */
+/** Explicit opt-in reads only. All ordinary mapper operations and transactions stay on primary. */
 @Component
 public class ReplicaReads {
-    private final JdbcTemplate primary;
-    private final JdbcTemplate replica;
+    private final ReplicationMapper primary;
+    private final SqlSessionTemplate replica;
+    private final TransactionOperations replicaTransaction;
     private final HikariDataSource pool;
     private final LongAdder replicaQueries = new LongAdder();
     private final LongAdder fallbacks = new LongAdder();
 
     @org.springframework.beans.factory.annotation.Autowired
-    public ReplicaReads(JdbcTemplate primary,
-                        @Value("${app.database.read-enabled:false}") boolean enabled,
+    public ReplicaReads(ReplicationMapper primary, @Value("${app.database.read-enabled:false}") boolean enabled,
                         @Value("${app.database.read-url:}") String url,
                         @Value("${app.database.read-username:activity_reader}") String username,
                         @Value("${app.database.read-password:}") String password,
@@ -39,64 +49,68 @@ public class ReplicaReads {
             config.setTransactionIsolation("TRANSACTION_READ_COMMITTED");
             config.setInitializationFailTimeout(-1);
             pool = new HikariDataSource(config);
-            replica = template(pool);
-        } else { pool = null; replica = null; }
+            var factory = replicaFactory(pool);
+            factory.getConfiguration().setDefaultStatementTimeout(3);
+            factory.getConfiguration().setLocalCacheScope(org.apache.ibatis.session.LocalCacheScope.STATEMENT);
+            factory.getConfiguration().addMapper(ManagementMapper.class);
+            factory.getConfiguration().addMapper(ActivityManagementMapper.class);
+            factory.getConfiguration().addMapper(ActivityMapper.class);
+            factory.getConfiguration().addMapper(ReplicationMapper.class);
+            factory.getConfiguration().setCallSettersOnNulls(true);
+            factory.getConfiguration().setReturnInstanceForEmptyRow(true);
+            replica = new SqlSessionTemplate(factory);
+            var transaction = new TransactionTemplate(new DataSourceTransactionManager(pool));
+            transaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+            transaction.setReadOnly(true);
+            replicaTransaction = transaction;
+        } else { pool = null; replica = null; replicaTransaction = null; }
     }
 
-    // Separate from Boot's DataSource beans so Flyway, transactions, sessions and workers cannot use the replica.
-    ReplicaReads(JdbcTemplate primary, JdbcTemplate replica) {
-        this.primary = primary; this.replica = replica; this.pool = null;
-    }
-
-    private static JdbcTemplate template(DataSource source) {
-        JdbcTemplate jdbc = new JdbcTemplate(source);
-        jdbc.setQueryTimeout(3);
-        return jdbc;
-    }
-
-    public List<Map<String, Object>> list(String sql, Object... args) {
-        // A transaction can contain uncommitted writes or a repeatable-read snapshot. Never split it.
-        if (replica == null || TransactionSynchronizationManager.isActualTransactionActive())
-            return primary.queryForList(sql, args);
-        // Sample AFTER authorization. Check replay and read on one connection at READ COMMITTED;
-        // its business query snapshot cannot predate this check. Lag falls back immediately.
-        String fence = primary.queryForObject("SELECT pg_current_wal_lsn()::text", String.class);
+    private static org.apache.ibatis.session.SqlSessionFactory replicaFactory(HikariDataSource source) {
+        var bean = new SqlSessionFactoryBean();
+        bean.setDataSource(source);
         try {
-            return readSnapshot(sql, args, fence);
-        } catch (org.springframework.dao.DataAccessException error) {
-            fallbacks.increment();
-            return primary.queryForList(sql, args);
+            return java.util.Objects.requireNonNull(bean.getObject());
+        } catch (Exception failure) {
+            source.close();
+            throw new IllegalStateException("Cannot create replica MyBatis session factory", failure);
         }
     }
 
-    private List<Map<String, Object>> readSnapshot(String sql, Object[] args, String fence) {
-        return replica.execute((org.springframework.jdbc.core.ConnectionCallback<List<Map<String,Object>>>) connection -> {
-            connection.setAutoCommit(false);
-            try {
-                boolean ready;
-                try (var statement = connection.prepareStatement("SELECT pg_is_in_recovery() AND pg_last_wal_replay_lsn() >= CAST(? AS pg_lsn)")) {
-                    statement.setQueryTimeout(3); statement.setString(1, fence);
-                    try (var result = statement.executeQuery()) { result.next(); ready = result.getBoolean(1); }
-                }
-                if (!ready) {
-                    connection.rollback(); fallbacks.increment();
-                    return primary.queryForList(sql, args);
-                }
-                List<Map<String,Object>> rows;
-                try (var statement = connection.prepareStatement(sql)) {
-                    statement.setQueryTimeout(3);
-                    for (int index=0; index<args.length; index++) statement.setObject(index+1, args[index]);
-                    try (var result = statement.executeQuery()) {
-                        rows = new java.util.ArrayList<>();
-                        var mapper = new org.springframework.jdbc.core.ColumnMapRowMapper();
-                        while (result.next()) rows.add(mapper.mapRow(result, rows.size()));
-                    }
-                }
-                connection.commit(); replicaQueries.increment(); return rows;
-            } finally {
-                connection.rollback(); connection.setAutoCommit(true);
+    // Separate from Boot's DataSource beans so Flyway, transactions, sessions and workers cannot use the replica.
+    ReplicaReads(ReplicationMapper primary, SqlSessionTemplate replica, TransactionOperations replicaTransaction) {
+        this.primary = primary;
+        this.replica = replica;
+        this.replicaTransaction = replicaTransaction;
+        this.pool = null;
+    }
+
+    public <T> List<Map<String, Object>> readMapper(Class<T> type, T mapper,
+            java.util.function.Function<T, List<Map<String, Object>>> query) {
+        return route(() -> query.apply(mapper), () -> query.apply(replica.getMapper(type)));
+    }
+
+    private List<Map<String, Object>> route(Supplier<List<Map<String, Object>>> primaryRead,
+                                          Supplier<List<Map<String, Object>>> replicaRead) {
+        // A transaction can contain uncommitted writes or a repeatable-read snapshot. Never split it.
+        if (replica == null || TransactionSynchronizationManager.isActualTransactionActive())
+            return primaryRead.get();
+        // Sample AFTER authorization. Check replay and read on one connection at READ COMMITTED;
+        // its business query snapshot cannot predate this check. Lag falls back immediately.
+        String fence = primary.currentPosition();
+        try {
+            List<Map<String, Object>> rows = replicaTransaction.execute(status -> {
+                return Boolean.TRUE.equals(replica.getMapper(ReplicationMapper.class).hasReplayed(fence)) ? replicaRead.get() : null;
+            });
+            if (rows != null) {
+                replicaQueries.increment();
+                return rows;
             }
-        });
+        } catch (DataAccessException | org.springframework.transaction.TransactionException unavailable) {
+            // A replica connection or statement failure falls back after its transaction closes.
+        }
+        fallbacks.increment();
+        return primaryRead.get();
     }
 
     public Map<String,Object> status() {

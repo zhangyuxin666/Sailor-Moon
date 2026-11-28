@@ -97,20 +97,38 @@ class RagStore:
         with self._connect() as connection, connection.cursor() as cursor:
             if organization_id:
                 cursor.execute(
-                    "SELECT id::text, source, version, content, metadata_json AS metadata, "
-                    "1 - (embedding <=> %s::vector) AS score "
-                    "FROM rag_documents "
-                    "WHERE (organization_id = %s OR organization_id IS NULL) AND embedding_profile=%s "
-                    "ORDER BY embedding <=> %s::vector LIMIT %s",
-                    (embedding, organization_id, self.embeddings.profile(), embedding, top_k),
+                    "WITH candidates AS ("
+                    " SELECT d.id::text AS id,d.source,d.version,c.content,c.chunk_index,"
+                    " d.metadata_json AS metadata,c.embedding AS candidate_embedding"
+                    " FROM rag_document_chunks c JOIN rag_documents d ON d.id=c.document_id"
+                    " WHERE (d.organization_id=%s OR d.organization_id IS NULL)"
+                    " AND c.embedding_profile=%s AND c.document_version=d.version"
+                    " UNION ALL"
+                    " SELECT d.id::text,d.source,d.version,d.content,-1,d.metadata_json,d.embedding"
+                    " FROM rag_documents d"
+                    " WHERE (d.organization_id=%s OR d.organization_id IS NULL) AND d.embedding_profile=%s"
+                    " AND NOT EXISTS (SELECT 1 FROM rag_document_chunks c WHERE c.document_id=d.id AND c.document_version=d.version)"
+                    ") SELECT id,source,version,content,chunk_index,metadata,"
+                    " 1-(candidate_embedding <=> %s::vector) AS score FROM candidates"
+                    " ORDER BY candidate_embedding <=> %s::vector LIMIT %s",
+                    (organization_id, self.embeddings.profile(), organization_id,
+                     self.embeddings.profile(), embedding, embedding, top_k),
                 )
             else:
                 cursor.execute(
-                    "SELECT id::text, source, version, content, metadata_json AS metadata, "
-                    "1 - (embedding <=> %s::vector) AS score "
-                    "FROM rag_documents WHERE organization_id IS NULL AND embedding_profile=%s "
-                    "ORDER BY embedding <=> %s::vector LIMIT %s",
-                    (embedding, self.embeddings.profile(), embedding, top_k),
+                    "WITH candidates AS ("
+                    " SELECT d.id::text AS id,d.source,d.version,c.content,c.chunk_index,"
+                    " d.metadata_json AS metadata,c.embedding AS candidate_embedding"
+                    " FROM rag_document_chunks c JOIN rag_documents d ON d.id=c.document_id"
+                    " WHERE d.organization_id IS NULL AND c.embedding_profile=%s AND c.document_version=d.version"
+                    " UNION ALL"
+                    " SELECT d.id::text,d.source,d.version,d.content,-1,d.metadata_json,d.embedding"
+                    " FROM rag_documents d WHERE d.organization_id IS NULL AND d.embedding_profile=%s"
+                    " AND NOT EXISTS (SELECT 1 FROM rag_document_chunks c WHERE c.document_id=d.id AND c.document_version=d.version)"
+                    ") SELECT id,source,version,content,chunk_index,metadata,"
+                    " 1-(candidate_embedding <=> %s::vector) AS score FROM candidates"
+                    " ORDER BY candidate_embedding <=> %s::vector LIMIT %s",
+                    (self.embeddings.profile(), self.embeddings.profile(), embedding, embedding, top_k),
                 )
             return list(cursor.fetchall())
 
@@ -120,7 +138,7 @@ class RagStore:
             results=[item for item in self.search(organization_id or None,query,4) if float(item.get("score") or 0)>0.05]
         except Exception:
             return "",{"retrieval_status":"unavailable","sources":[],"embedding_profile":profile}
-        sources=[{"id":item["id"],"source":item["source"],"version":item["version"],"excerpt":item["content"][:240],"score":float(item.get("score") or 0)} for item in results]
+        sources=[{"id":item["id"],"source":item["source"],"version":item["version"],"chunk_index":item.get("chunk_index",-1),"excerpt":item["content"][:240],"score":float(item.get("score") or 0)} for item in results]
         context="\n\n".join(f"[资料 {item['id']} v{item['version']}：{item['source']}]\n{item['content'][:1800]}" for item in results)
         return context,{"retrieval_status":"used" if sources else "empty","sources":sources,"embedding_profile":profile}
 

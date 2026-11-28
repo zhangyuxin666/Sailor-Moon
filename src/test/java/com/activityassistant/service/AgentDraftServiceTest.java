@@ -1,13 +1,12 @@
 package com.activityassistant.service;
 
 import com.activityassistant.integration.AiClient;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.AgentDraftMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.ApiException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -183,50 +182,70 @@ class AgentDraftServiceTest {
     private record Harness(AgentDraftService service, FakeDb db, AiClient ai,
                            ActivityService activities, RunLifecycleService lifecycle) {}
 
-    private static final class FakeDb extends Db {
+    private static final class FakeDb implements AgentDraftMapper {
         private final Map<String, Object> row = new LinkedHashMap<>();
         private final ObjectMapper mapper;
         private JsonNode publishedPlan;
         private JsonNode runPlan;
 
         FakeDb(String draftJson, ObjectMapper mapper) {
-            super(new JdbcTemplate());
             this.mapper = mapper;
             row.putAll(Map.of("id", "d1", "organization_id", "org1", "class_id", "c1", "creator_id", "u1",
                     "raw_input", "Organize trip", "status", "draft", "draft_json", draftJson));
         }
 
-        @Override
-        public Optional<Map<String, Object>> one(String sql, Object... args) {
-            if (sql.startsWith("SELECT id FROM agent_drafts")) return Optional.of(Map.of("id", row.get("id")));
-            if (sql.startsWith("SELECT d.*")) return Optional.of(row);
-            throw new AssertionError("Unexpected query: " + sql);
+        @Override public List<Map<String, Object>> listClassMembers(String classId) {
+            return List.of(Map.of("account_id", "u1", "display_name", "Manager"));
         }
 
-        @Override
-        public List<Map<String, Object>> list(String sql, Object... args) {
-            if (sql.startsWith("SELECT a.id AS account_id"))
-                return List.of(Map.of("account_id", "u1", "display_name", "Manager"));
-            throw new AssertionError("Unexpected query: " + sql);
+        @Override public void insertDraft(String id, String organizationId, String classId, String creatorId, String rawInput, String intent, String complexity, String draft, String createdAt, String updatedAt) {
+            row.put("id", id);
+            row.put("draft_json", draft);
         }
 
-        @Override
-        public int update(String sql, Object... args) {
-            try {
-                if (sql.startsWith("INSERT INTO agent_drafts")) {
-                    row.put("id", args[0]);
-                    row.put("draft_json", args[7]);
-                } else if (sql.startsWith("UPDATE agent_drafts SET intent_type=")) {
-                    row.put("draft_json", args[2]);
-                } else if (sql.startsWith("UPDATE activities SET title=")) {
-                    publishedPlan = mapper.readTree(String.valueOf(args[1]));
-                } else if (sql.startsWith("UPDATE agent_runs SET plan_json=")) {
-                    runPlan = mapper.readTree(String.valueOf(args[0]));
-                }
-                return 1;
-            } catch (Exception exception) {
-                throw new AssertionError(exception);
-            }
+        @Override public Map<String, Object> findVisibleDraftRow(String id, String accountId) {
+            return row;
+        }
+
+        @Override public List<Map<String, Object>> listVisibleDrafts(String accountId) {
+            return List.of();
+        }
+
+        @Override public Map<String, Object> lockDraftRow(String id) {
+            return Map.of("id", row.get("id"));
+        }
+
+        @Override public void updateDraft(String intent, String complexity, String draft, String now, String id) {
+            row.put("draft_json", draft);
+        }
+
+        @Override public int startPublishing(String now, String id) {
+            return 1;
+        }
+
+        @Override public void publish(String resultType, String resultId, String now, String id) {}
+
+        @Override public void restoreDraft(String now, String id) {}
+
+        @Override public void saveActivityPlan(String title, String plan, String id) {
+            publishedPlan = readPlan(plan);
+        }
+
+        @Override public void saveRunPlan(String plan, String now, String id) {
+            runPlan = readPlan(plan);
+        }
+
+        @Override public Map<String, Object> findResultRunRow(String id) {
+            return null;
+        }
+
+        @Override public List<Map<String, Object>> listActiveMembers(String classId) {
+            return List.of(Map.of("account_id", "u1"));
+        }
+
+        private JsonNode readPlan(String value) {
+            try { return mapper.readTree(value); }
+            catch (Exception exception) { throw new AssertionError(exception); }
         }
     }
 }

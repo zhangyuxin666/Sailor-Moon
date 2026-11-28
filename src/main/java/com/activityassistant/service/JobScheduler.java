@@ -2,7 +2,8 @@ package com.activityassistant.service;
 
 import com.activityassistant.config.AppProperties;
 import com.activityassistant.orchestration.ActivityOrchestrator;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.JobSchedulerMapper;
+import com.activityassistant.persistence.mapper.BackgroundJobMapper;
 import com.activityassistant.support.Times;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,7 +18,8 @@ import java.util.Map;
 @Component
 public class JobScheduler {
     private static final Logger log = LoggerFactory.getLogger(JobScheduler.class);
-    private final Db db;
+    private final JobSchedulerMapper scheduler;
+    private final BackgroundJobMapper jobMapper;
     private final BackgroundJobService jobs;
     private final ActivityOrchestrator orchestrator;
     private final AgentRunService agentRuns;
@@ -27,9 +29,10 @@ public class JobScheduler {
     private final ActivityGate gate;
     private final ChangeDeliveryService changes;
 
-    public JobScheduler(Db db, BackgroundJobService jobs, ActivityOrchestrator orchestrator, AgentRunService agentRuns,
-                        ClassroomService classroom, QqService qq, AppProperties properties, ActivityGate gate, ChangeDeliveryService changes) {
-        this.db = db;
+    public JobScheduler(JobSchedulerMapper scheduler, BackgroundJobService jobs, ActivityOrchestrator orchestrator, AgentRunService agentRuns,
+                        ClassroomService classroom, QqService qq, AppProperties properties, ActivityGate gate, ChangeDeliveryService changes, BackgroundJobMapper jobMapper) {
+        this.scheduler = scheduler;
+        this.jobMapper = jobMapper;
         this.jobs = jobs;
         this.orchestrator = orchestrator;
         this.agentRuns = agentRuns;
@@ -51,15 +54,15 @@ public class JobScheduler {
         var heartbeat=heartbeats.scheduleAtFixedRate(()->{try{jobs.heartbeat(job);}catch(Exception error){log.warn("Worker heartbeat unavailable for {}",job.get("id"));}},jobs.heartbeatMillis(),jobs.heartbeatMillis(),java.util.concurrent.TimeUnit.MILLISECONDS);
         Thread worker=Thread.currentThread();
         var timeout=heartbeats.schedule(worker::interrupt,jobs.maxMillis(),java.util.concurrent.TimeUnit.MILLISECONDS);
-        try(JobLease lease=new JobLease(job)) {
+        try(JobLease lease=new JobLease(job, jobMapper)) {
             try {
-                JobLease.verify(db);
+                JobLease.verify();
                 String ref=String.valueOf(job.get("ref_id"));
                 switch(String.valueOf(job.get("kind"))) {
                     case "activity" -> orchestrator.run(ref);
                     case "reminder" -> deliverReminder(ref);
                     case "todo_reminder" -> {
-                        var row=db.required("SELECT todo_id FROM todo_reminders WHERE id=?",ref);
+                        var row=scheduler.findTodoReminder(ref).orElseThrow();
                         gate.todoDuring(String.valueOf(row.get("todo_id")),()->{deliverTodoReminder(ref);return null;});
                     }
                     case "activity_change" -> changes.deliver(ref);
@@ -75,8 +78,15 @@ public class JobScheduler {
                         String state=jobs.fail(job,error);
                         if("activity_change".equals(job.get("kind")))changes.failed(String.valueOf(job.get("ref_id")),error,"queued".equals(state));
                         if("reminder".equals(job.get("kind"))||"todo_reminder".equals(job.get("kind"))) {
-                            String table="reminder".equals(job.get("kind"))?"reminders":"todo_reminders";
-                            db.update("UPDATE "+table+" SET error=?,status=CASE WHEN ?='failed' THEN ? ELSE status END WHERE id=? AND status IN ('scheduled','failed')",com.activityassistant.support.PublicErrors.failure(error),state,error instanceof com.activityassistant.support.ApiException e&&e.status().value()==409?"unknown":"failed",job.get("ref_id"));
+                            String publicError = com.activityassistant.support.PublicErrors.failure(error);
+                            String terminalStatus = error instanceof com.activityassistant.support.ApiException e
+                                    && e.status().value() == 409 ? "unknown" : "failed";
+                            String id = String.valueOf(job.get("ref_id"));
+                            if ("reminder".equals(job.get("kind"))) {
+                                scheduler.recordReminderFailure(publicError, state, terminalStatus, id);
+                            } else {
+                                scheduler.recordTodoReminderFailure(publicError, state, terminalStatus, id);
+                            }
                         }
                         return state;
                     };
@@ -88,22 +98,26 @@ public class JobScheduler {
     private String activityOf(Map<String,Object> job) {
         String kind=String.valueOf(job.get("kind"));
         if("activity".equals(kind))return String.valueOf(job.get("ref_id"));
-        String table="reminder".equals(kind)?"reminders":"activity_change".equals(kind)?"activity_changes":null;
-        return table==null?null:db.one("SELECT activity_id FROM "+table+" WHERE id=?",job.get("ref_id")).map(r->String.valueOf(r.get("activity_id"))).orElse(null);
+        String ref = String.valueOf(job.get("ref_id"));
+        return switch (kind) {
+            case "reminder" -> scheduler.findReminderActivity(ref).map(r -> String.valueOf(r.get("activity_id"))).orElse(null);
+            case "activity_change" -> scheduler.findChangeActivity(ref).map(r -> String.valueOf(r.get("activity_id"))).orElse(null);
+            default -> null;
+        };
     }
 
     @Scheduled(fixedDelayString = "${REMINDER_SCAN_MILLIS:5000}")
     public void enqueueDueReminders() {
         Instant now = Instant.now();
-        due(db.list("SELECT id, remind_at FROM reminders WHERE status='scheduled'"), now)
+        due(scheduler.listScheduledReminders(), now)
                 .forEach(row -> jobs.enqueue("reminder", String.valueOf(row.get("id"))));
-        due(db.list("SELECT id, remind_at FROM todo_reminders WHERE status='scheduled'"), now)
+        due(scheduler.listScheduledTodoReminders(), now)
                 .forEach(row -> jobs.enqueue("todo_reminder", String.valueOf(row.get("id"))));
     }
 
     @Scheduled(fixedDelayString="${WORKER_RECOVERY_MILLIS:5000}")
     public void recoverStaleJobs() {
-        for(var job:db.list("SELECT * FROM background_jobs WHERE status='running' AND (lease_until IS NULL OR lease_until<=clock_timestamp() OR deadline_at<=clock_timestamp())")) {
+        for(var job:scheduler.listExpiredJobs()) {
             String activity=activityOf(job);
             if(activity==null)jobs.recover(job);
             else gate.during(activity,true,()->{jobs.recover(job);return null;});
@@ -118,46 +132,43 @@ public class JobScheduler {
     }
 
     private void deliverReminder(String reminderId) {
-        String activityId=db.one("SELECT activity_id FROM reminders WHERE id=?",reminderId).map(r->String.valueOf(r.get("activity_id"))).orElse(null);
+        String activityId=scheduler.findReminderActivity(reminderId).map(r->String.valueOf(r.get("activity_id"))).orElse(null);
         if(activityId!=null)gate.during(activityId,false,()->{deliverReminderLocked(reminderId);return null;});
     }
     private void deliverReminderLocked(String reminderId) {
-        Map<String, Object> reminder = db.one("SELECT * FROM reminders WHERE id=? AND status='scheduled'", reminderId).orElse(null);
+        Map<String, Object> reminder = scheduler.findScheduledReminder(reminderId).orElse(null);
         if (reminder == null) return;
         String activityId = String.valueOf(reminder.get("activity_id"));
         String key = "reminder:" + reminderId;
-        if (db.one("SELECT 1 FROM idempotency_keys WHERE key=?", key).isEmpty()) {
-            String group = db.one("SELECT group_openid FROM activity_channels WHERE activity_id=?", activityId)
+        if (scheduler.findReceipt(key).isEmpty()) {
+            String group = scheduler.findActivityChannel(activityId)
                     .map(row -> String.valueOf(row.get("group_openid"))).orElse(null);
             Map<String, Object> result;
             if (group != null) result = orchestrator.sendGroupMessage(
                     activityId, group, String.valueOf(reminder.get("message")), "reminder", key);
             else {
-                db.update("INSERT INTO messages (activity_id, recipient, content, created_at) VALUES (?, 'all', ?, ?)",
-                        activityId, reminder.get("message"), LocalDateTime.now().toString());
+                scheduler.insertMessage(activityId, (String) reminder.get("message"), LocalDateTime.now().toString());
                 result = Map.of("status", "sent");
             }
             try {
                 String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(result);
-                db.update("INSERT INTO idempotency_keys (key, tool_name, result_json, created_at) VALUES (?, 'send_message', ?, ?) ON CONFLICT DO NOTHING",
-                        key, json, LocalDateTime.now().toString());
+                scheduler.saveReminderReceipt(key, json, LocalDateTime.now().toString());
             } catch (Exception ignored) {}
         }
-        db.update("UPDATE reminders SET status='sent' WHERE id=?", reminderId);
+        scheduler.markReminderSent(reminderId);
     }
 
     private void deliverTodoReminder(String reminderId) {
-        Map<String, Object> reminder = db.one("SELECT * FROM todo_reminders WHERE id=? AND status='scheduled'", reminderId).orElse(null);
+        Map<String, Object> reminder = scheduler.findScheduledTodoReminder(reminderId).orElse(null);
         if (reminder == null) return;
         String key = "todo-reminder:" + reminderId;
-        if (db.one("SELECT 1 FROM idempotency_keys WHERE key=?", key).isEmpty()) {
+        if (scheduler.findReceipt(key).isEmpty()) {
             Map<String, Object> result = classroom.remindMissing(null, String.valueOf(reminder.get("todo_id")), true,key);
             try {
                 String json = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(result);
-                db.update("INSERT INTO idempotency_keys (key, tool_name, result_json, created_at) VALUES (?, 'send_qq_group_message', ?, ?) ON CONFLICT DO NOTHING",
-                        key, json, LocalDateTime.now().toString());
+                scheduler.saveTodoReceipt(key, json, LocalDateTime.now().toString());
             } catch (Exception ignored) {}
         }
-        db.update("UPDATE todo_reminders SET status='sent' WHERE id=?", reminderId);
+        scheduler.markTodoReminderSent(reminderId);
     }
 }

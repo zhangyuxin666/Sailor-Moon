@@ -1,6 +1,6 @@
 package com.activityassistant.api;
 
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.DatabaseHealthMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 class PageControllerTest {
-    private final PageController controller = new PageController(mock(Db.class));
+    private final PageController controller = new PageController(mock(DatabaseHealthMapper.class));
 
     @Test
     void anonymousRootRedirectsWithoutCaching() {

@@ -1,6 +1,7 @@
 package com.activityassistant.service;
 
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.ActivityGateMapper;
+import com.activityassistant.persistence.mapper.ParticipationMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.ApiException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,10 +27,11 @@ class ParticipationRulesTest {
     private static final AccountPrincipal MEMBER_MANAGER = account("member-manager-id", "member-manager", "manager");
     private static final AccountPrincipal OWNER = account("owner-id", "owner", "manager");
     private final ObjectMapper mapper = new ObjectMapper();
-    private final Db db = mock(Db.class);
+    private final ActivityGateMapper gateMapper = mock(ActivityGateMapper.class);
     private final ClassroomService classroom = mock(ClassroomService.class);
-    private final ActivityGate gate = new ActivityGate(db, mapper, null, mock(AuditService.class), null);
-    private final ParticipationService service = new ParticipationService(db, gate, classroom);
+    private final ActivityGate gate = new ActivityGate(gateMapper, mapper, null, mock(AuditService.class), null);
+    private final ParticipationMapper rows = mock(ParticipationMapper.class);
+    private final ParticipationService service = new ParticipationService(rows, gate, classroom);
     private String status = "ready";
     private boolean currentMember = true;
     private boolean checkedIn = true;
@@ -40,22 +42,17 @@ class ParticipationRulesTest {
     }
 
     @BeforeEach void eligibleActivity() {
-        when(db.one(anyString(), any(Object[].class))).thenAnswer(invocation -> {
-            String sql = invocation.getArgument(0);
-            if (sql.equals("SELECT * FROM activities WHERE id=? FOR UPDATE"))
-                return Optional.of(Map.of("id", ACTIVITY, "user_id", "owner", "status", status));
-            if (sql.startsWith("SELECT 1 FROM activity_classes ac JOIN"))
-                return currentMember ? Optional.of(Map.of("present", 1)) : Optional.empty();
-            if (sql.startsWith("SELECT 1 FROM activity_participants"))
-                return Optional.of(Map.of("present", 1));
-            if (sql.startsWith("SELECT 1 FROM activity_check_ins"))
-                return checkedIn ? Optional.of(Map.of("present", 1)) : Optional.empty();
-            if (sql.startsWith("SELECT attendance_open,feedback_open"))
-                return Optional.of(Map.of("attendance_open", true, "feedback_open", true, "version", 1, "roster_confirmed", true));
-            if (sql.startsWith("SELECT version FROM activity_feedback") && feedbackVersion != null)
-                return Optional.of(Map.of("version", feedbackVersion));
-            return Optional.empty();
-        });
+        when(gateMapper.lockActivity(ACTIVITY))
+                .thenAnswer(call -> Optional.of(Map.of("id", ACTIVITY, "user_id", "owner", "status", status)));
+        when(rows.findMember(eq(ACTIVITY), anyString()))
+                .thenAnswer(call -> currentMember ? Optional.of(Map.of("present", 1)) : Optional.empty());
+        when(rows.findRosterMember(eq(ACTIVITY), anyString())).thenReturn(Optional.of(Map.of("present", 1)));
+        when(rows.hasCheckIn(eq(ACTIVITY), anyString()))
+                .thenAnswer(call -> checkedIn ? Optional.of(Map.of("present", 1)) : Optional.empty());
+        when(rows.findSettings(ACTIVITY)).thenReturn(Optional.of(
+                Map.of("attendance_open", true, "feedback_open", true, "version", 1, "roster_confirmed", true)));
+        when(rows.findFeedbackVersion(eq(ACTIVITY), anyString())).thenAnswer(
+                call -> feedbackVersion == null ? Optional.empty() : Optional.of(Map.of("version", feedbackVersion)));
     }
 
     private ObjectNode checkIn() {
@@ -72,7 +69,10 @@ class ParticipationRulesTest {
     private void rejected(Runnable action, HttpStatus expected) {
         assertThatThrownBy(action::run).isInstanceOfSatisfying(ApiException.class,
                 error -> assertThat(error.status()).isEqualTo(expected));
-        verify(db, never()).update(anyString(), any(Object[].class));
+        verify(rows, never()).insertCheckIn(anyString(), anyString(), anyString(), anyString());
+        verify(rows, never()).saveSettings(anyString(), anyBoolean(), anyBoolean(), anyBoolean());
+        verify(rows, never()).insertFeedback(anyString(), anyString(), anyInt(), anyString(), anyString(), anyString());
+        verify(rows, never()).updateFeedback(anyInt(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test void studentCannotSupplyAnotherMembersIdentity() {
@@ -80,14 +80,14 @@ class ParticipationRulesTest {
     }
 
     @Test void actualMemberManagerCanCheckInWithoutOwningTheActivity() {
-        when(db.update(startsWith("INSERT INTO activity_check_ins"), any(Object[].class))).thenReturn(1);
-        when(db.required("SELECT checked_in_at FROM activity_check_ins WHERE activity_id=? AND account_id=?", ACTIVITY, MEMBER_MANAGER.id()))
-                .thenReturn(Map.of("checked_in_at", "2026-10-27T09:00:00"));
+        when(rows.insertCheckIn(eq(ACTIVITY), eq(MEMBER_MANAGER.id()), eq(MEMBER_MANAGER.id()), anyString())).thenReturn(1);
+        when(rows.findCheckIn(ACTIVITY, MEMBER_MANAGER.id()))
+                .thenReturn(Optional.of(Map.of("checked_in_at", "2026-10-27T09:00:00")));
 
         var result = service.checkIn(ACTIVITY, MEMBER_MANAGER, checkIn());
 
         assertThat(result).containsEntry("account_id", MEMBER_MANAGER.id()).containsEntry("checked_in", true);
-        verify(db).update(startsWith("INSERT INTO activity_check_ins"), eq(ACTIVITY), eq(MEMBER_MANAGER.id()), eq(MEMBER_MANAGER.id()), anyString());
+        verify(rows).insertCheckIn( eq(ACTIVITY), eq(MEMBER_MANAGER.id()), eq(MEMBER_MANAGER.id()), anyString());
         verifyNoInteractions(classroom);
     }
 

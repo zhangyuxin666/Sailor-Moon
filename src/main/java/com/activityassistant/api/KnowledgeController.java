@@ -40,4 +40,6 @@ public class KnowledgeController {
     Map<String,Object> update(Authentication auth,@PathVariable String id,@RequestBody JsonNode body){return knowledge.update(AuthController.required(auth),id,body);}
     @DeleteMapping("/knowledge/documents/{id}")
     Map<String,Object> delete(Authentication auth,@PathVariable String id,@RequestParam int expectedVersion){return knowledge.delete(AuthController.required(auth),id,expectedVersion);}
+    @PostMapping("/knowledge/documents/{id}/reindex")
+    Map<String,Object> reindex(Authentication auth,@PathVariable String id){return knowledge.reindex(AuthController.required(auth),id);}
 }

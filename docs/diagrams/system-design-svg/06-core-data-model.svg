@@ -1,0 +1,67 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="850" viewBox="0 0 1400 850">
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#555"/></marker><filter id="shadow"><feDropShadow dx="2" dy="3" stdDeviation="2" flood-opacity="0.18"/></filter></defs>
+<rect width="1400" height="850" fill="#FAFCF7"/><rect x="20" y="18" width="1360" height="82" rx="14" fill="#48693A"/>
+<text x="700" y="52" text-anchor="middle" font-family="Microsoft YaHei" font-size="28" font-weight="bold" fill="white">核心数据模型（领域级ER图）</text>
+<text x="700" y="80" text-anchor="middle" font-family="Microsoft YaHei" font-size="15" fill="#E9F2E4">主要实体与关系；完整字段以Flyway V1～V14为准</text>
+<line x1="135" y1="220" x2="135" y2="380" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="135" y1="220" x2="405" y2="380" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="405" y1="220" x2="405" y2="380" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="135" y1="380" x2="405" y2="380" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="405" y1="380" x2="675" y2="220" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="220" x2="675" y2="380" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="380" x2="950" y2="220" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="950" y1="220" x2="950" y2="380" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="380" x2="140" y2="590" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="380" x2="410" y2="590" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="380" x2="685" y2="590" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="380" x2="965" y2="590" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="135" y1="220" x2="1235" y2="220" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="380" x2="1235" y2="380" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="405" y1="220" x2="1235" y2="590" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="675" y1="380" x2="1235" y2="590" stroke="#666" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="30" y="180" width="210" height="80" rx="14" fill="#DDEBF7" stroke="#2E5F91" stroke-width="2" filter="url(#shadow)"/>
+<text x="135" y="209" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">organizations</text>
+<text x="135" y="233" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">组织</text>
+<rect x="300" y="180" width="210" height="80" rx="14" fill="#DDEBF7" stroke="#2E5F91" stroke-width="2" filter="url(#shadow)"/>
+<text x="405" y="209" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">accounts</text>
+<text x="405" y="233" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">账号</text>
+<rect x="30" y="340" width="210" height="80" rx="14" fill="#DDEBF7" stroke="#2E5F91" stroke-width="2" filter="url(#shadow)"/>
+<text x="135" y="369" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">classes</text>
+<text x="135" y="393" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">班级</text>
+<rect x="300" y="340" width="210" height="80" rx="14" fill="#DDEBF7" stroke="#2E5F91" stroke-width="2" filter="url(#shadow)"/>
+<text x="405" y="369" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">成员关系</text>
+<text x="405" y="393" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">组织/班级成员</text>
+<rect x="570" y="180" width="210" height="80" rx="14" fill="#EADFF4" stroke="#7030A0" stroke-width="2" filter="url(#shadow)"/>
+<text x="675" y="209" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">agent_drafts</text>
+<text x="675" y="233" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">确认前草案</text>
+<rect x="570" y="340" width="210" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="675" y="369" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">activities</text>
+<text x="675" y="393" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">活动</text>
+<rect x="840" y="180" width="220" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="950" y="209" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">agent_runs / steps</text>
+<text x="950" y="233" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">执行与步骤</text>
+<rect x="840" y="340" width="220" height="80" rx="14" fill="#E2EFDA" stroke="#548235" stroke-width="2" filter="url(#shadow)"/>
+<text x="950" y="369" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">background_jobs</text>
+<text x="950" y="393" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">任务租约</text>
+<rect x="30" y="550" width="220" height="80" rx="14" fill="#FFF2CC" stroke="#BF9000" stroke-width="2" filter="url(#shadow)"/>
+<text x="140" y="579" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">forms / registrations</text>
+<text x="140" y="603" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">表单与报名</text>
+<rect x="300" y="550" width="220" height="80" rx="14" fill="#FFF2CC" stroke="#BF9000" stroke-width="2" filter="url(#shadow)"/>
+<text x="410" y="579" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">tasks</text>
+<text x="410" y="603" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">负责人/依赖</text>
+<rect x="570" y="550" width="230" height="80" rx="14" fill="#FFF2CC" stroke="#BF9000" stroke-width="2" filter="url(#shadow)"/>
+<text x="685" y="579" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">参与数据</text>
+<text x="685" y="603" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">签到/反馈</text>
+<rect x="850" y="550" width="230" height="80" rx="14" fill="#FCE4D6" stroke="#C65911" stroke-width="2" filter="url(#shadow)"/>
+<text x="965" y="579" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">提醒与投递</text>
+<text x="965" y="603" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">messages/deliveries</text>
+<rect x="1120" y="180" width="230" height="80" rx="14" fill="#EADFF4" stroke="#7030A0" stroke-width="2" filter="url(#shadow)"/>
+<text x="1235" y="209" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">rag_documents/chunks</text>
+<text x="1235" y="233" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">资料与向量</text>
+<rect x="1120" y="340" width="230" height="80" rx="14" fill="#EADFF4" stroke="#7030A0" stroke-width="2" filter="url(#shadow)"/>
+<text x="1235" y="369" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">activity_recaps</text>
+<text x="1235" y="393" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">快照与复盘版本</text>
+<rect x="1120" y="550" width="230" height="80" rx="14" fill="#F2F2F2" stroke="#595959" stroke-width="2" filter="url(#shadow)"/>
+<text x="1235" y="579" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="16" font-weight="bold" fill="#263322">audit/idempotency</text>
+<text x="1235" y="603" text-anchor="middle" dominant-baseline="middle" font-family="Microsoft YaHei" font-size="13" font-weight="normal" fill="#263322">审计与幂等</text>
+</svg>

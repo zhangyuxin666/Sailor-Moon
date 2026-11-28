@@ -61,7 +61,7 @@ AI 不创建业务实体，网关不代替组织权限校验，业务副作用�
 ## 数据库读写分离入口
 
 - `persistence/ReplicaReads.java`：独立只读连接池、WAL 同步屏障、事务保持主库、从库异常降级和计数。
-- `persistence/Db.java`：原有主库方法和显式 `readList` 入口；调用点位于 `ActivityService`、`ActivityManagementService`、`ManagementController`。
+- `persistence/mapper/`：按业务划分的 MyBatis Mapper。活动列表、变更记录和通知通过 `ReplicaReads` 路由。
 - `api/DatabaseRoutingController.java`：仅管理者可访问的 `/cluster/database` 状态接口。
 - `compose.replication.yml`、`scripts/postgres/`：复制账号、只读权限、主库 WAL 配置、从库基准备份与持久化。
 - `scripts/test_readwrite.py`：独立项目中的真实复制、分流、延迟/断开/恢复及权限验收。

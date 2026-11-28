@@ -3,7 +3,8 @@ package com.activityassistant.service;
 import com.activityassistant.integration.AiClient;
 import com.activityassistant.orchestration.ActivityOrchestrator;
 import com.activityassistant.orchestration.ExecutionJournal;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.ReplicaReads;
+import com.activityassistant.persistence.mapper.ActivityMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.ApiException;
 import com.activityassistant.support.Ids;
@@ -22,7 +23,8 @@ import java.util.Map;
 
 @Service
 public class ActivityService {
-    private final Db db;
+    private final ReplicaReads replicaReads;
+    private final ActivityMapper activities;
     private final BackgroundJobService jobs;
     private final AgentRunService agentRuns;
     private final AiClient ai;
@@ -35,10 +37,11 @@ public class ActivityService {
     private final TaskManagementService taskManagement;
     private final ActivityGate gate;
 
-    public ActivityService(Db db, BackgroundJobService jobs, AgentRunService agentRuns, AiClient ai, QqService qq,
+    public ActivityService(ReplicaReads replicaReads, ActivityMapper activities, BackgroundJobService jobs, AgentRunService agentRuns, AiClient ai, QqService qq,
                            ObjectMapper mapper, ActivityOrchestrator orchestrator, ExecutionJournal journal,
                            RunLifecycleService lifecycle, RegistrationService registrations, TaskManagementService taskManagement, ActivityGate gate) {
-        this.db = db;
+        this.replicaReads = replicaReads;
+        this.activities = activities;
         this.jobs = jobs;
         this.agentRuns = agentRuns;
         this.ai = ai;
@@ -59,22 +62,21 @@ public class ActivityService {
         String id = Ids.shortId();
         String now = LocalDateTime.now().toString();
         // 学习点: 先把活动写成 queued，用户马上能拿到 ID，而不是等完整流程执行完。
-        db.update("INSERT INTO activities (id, user_id, title, raw_input, status, created_at) VALUES (?, ?, ?, ?, 'queued', ?)",
-                id, account.username(), text.substring(0, Math.min(20, text.length())), text, now);
+        activities.insertActivity(id, account.username(), text.substring(0, Math.min(20, text.length())), text, now);
         String group = null;
         String organizationId = null;
         // 学习点: 有班级时保存班级、流程配置和 QQ 群绑定；这些是后续编排需要的上下文。
         if (classId != null && !classId.isBlank()) {
-            Map<String, Object> classroom = db.one("SELECT c.qq_group_openid, co.organization_id FROM classes c JOIN class_organizations co ON co.class_id=c.id WHERE c.id=?", classId)
+            Map<String, Object> classroom = activities.findClass(classId)
                     .orElseThrow(() -> ApiException.notFound("班级不存在"));
-            db.update("INSERT INTO activity_classes (activity_id, class_id, organization_id) VALUES (?, ?, ?)", id, classId, classroom.get("organization_id"));
+            activities.linkClass(id, classId, classroom.get("organization_id"));
             organizationId = String.valueOf(classroom.get("organization_id"));
-            if (workflow != null) db.update("INSERT INTO activity_workflows (activity_id, config_json) VALUES (?, ?)", id, workflow.toString());
+            if (workflow != null) activities.insertWorkflow(id, workflow.toString());
             if (publishToQq && classroom.get("qq_group_openid") != null) {
                 group = String.valueOf(classroom.get("qq_group_openid"));
                 if (!qq.isGroupAuthorized(organizationId, group))
                     throw ApiException.forbidden("班级 QQ 群绑定已失效，请重新选择授权群");
-                db.update("INSERT INTO activity_channels (activity_id, user_id, group_openid, created_at) VALUES (?, ?, ?, ?)", id, account.username(), group, now);
+                activities.insertChannel(id, account.username(), group, now);
             }
         } else if (publishToQq) {
             group = qq.attachActivity(account.username(), id);
@@ -89,23 +91,19 @@ public class ActivityService {
     }
 
     public List<Map<String, Object>> list(AccountPrincipal account) {
-        if (account.isManager()) return db.readList("SELECT DISTINCT a.*, ac.class_id FROM activities a JOIN activity_classes ac ON ac.activity_id=a.id " +
-                "JOIN class_organizations co ON co.class_id=ac.class_id JOIN organization_members om ON om.organization_id=co.organization_id " +
-                "WHERE om.account_id=? AND om.role IN ('owner','manager') AND a.user_id=? ORDER BY a.created_at DESC",
-                account.id(), account.username());
-        return db.readList("SELECT DISTINCT a.id, a.title, a.status, a.created_at FROM activities a JOIN tasks t ON t.activity_id=a.id JOIN activity_task_assignees ata ON ata.task_id=t.id " +
-                "WHERE ata.account_id=? ORDER BY a.created_at DESC", account.id());
+        if (account.isManager()) return replicaReads.readMapper(ActivityMapper.class, activities, reader -> reader.listManaged(account.id(), account.username()));
+        return replicaReads.readMapper(ActivityMapper.class, activities, reader -> reader.listAssigned(account.id()));
     }
 
     public void requireOwner(String activityId, String username) {
-        Map<String, Object> row = db.one("SELECT user_id FROM activities WHERE id=?", activityId)
+        Map<String, Object> row = activities.findOwner(activityId)
                 .orElseThrow(() -> ApiException.notFound("活动不存在: " + activityId));
         if (!username.equals(row.get("user_id"))) throw ApiException.forbidden("只能操作自己创建的活动");
     }
 
     public Map<String, Object> detail(String activityId, String username) {
         requireOwner(activityId, username);
-        Map<String, Object> activity = new LinkedHashMap<>(db.required("SELECT * FROM activities WHERE id=?", activityId));
+        Map<String, Object> activity = new LinkedHashMap<>(java.util.Objects.requireNonNull(activities.findActivity(activityId)));
         JsonNode plan = null;
         try { if (activity.get("plan_json") != null) plan = mapper.readTree(String.valueOf(activity.get("plan_json"))); } catch (Exception ignored) {}
         Map<String, Object> result = new LinkedHashMap<>();
@@ -113,12 +111,12 @@ public class ActivityService {
         Map<String, Object> run = agentRuns.byRef("activity", activityId);
         result.put("run_id", run == null ? null : run.get("id"));
         result.put("tasks", taskManagement.tasks(activityId));
-        result.put("forms", db.list("SELECT * FROM forms WHERE activity_id=?", activityId));
-        result.put("reminders", db.list("SELECT * FROM reminders WHERE activity_id=?", activityId));
-        result.put("steps", db.readList("SELECT * FROM steps WHERE activity_id=? ORDER BY id", activityId)
+        result.put("forms", activities.listForms(activityId));
+        result.put("reminders", activities.listReminders(activityId));
+        result.put("steps", replicaReads.readMapper(ActivityMapper.class, activities, reader -> reader.listSteps(activityId))
                 .stream().map(this::publicStep).toList());
-        result.put("qq_group_attached", db.one("SELECT 1 FROM activity_channels WHERE activity_id=?", activityId).isPresent());
-        result.put("deliveries", db.readList("SELECT * FROM delivery_events WHERE activity_id=? ORDER BY created_at DESC", activityId)
+        result.put("qq_group_attached", activities.findChannel(activityId).isPresent());
+        result.put("deliveries", replicaReads.readMapper(ActivityMapper.class, activities, reader -> reader.listDeliveries(activityId))
                 .stream().map(this::publicDelivery).toList());
         return result;
     }
@@ -130,14 +128,14 @@ public class ActivityService {
     public Map<String,Object> formStats(String activityId,String username){return registrations.stats(activityId,username);}
 
     public Map<String, Object> cancelReminder(String reminderId, String username) {
-        Map<String, Object> row = db.one("SELECT activity_id FROM reminders WHERE id=?", reminderId).orElseThrow(() -> ApiException.notFound("提醒不存在: " + reminderId));
+        Map<String, Object> row = activities.findReminderActivity(reminderId).orElseThrow(() -> ApiException.notFound("提醒不存在: " + reminderId));
         String activityId=String.valueOf(row.get("activity_id"));
         return gate.during(activityId,true,()->{
             requireOwner(activityId,username);
-            var reminder=db.required("SELECT status FROM reminders WHERE id=? FOR UPDATE",reminderId);
+            var reminder=java.util.Objects.requireNonNull(activities.lockReminder(reminderId));
             if("sent".equals(reminder.get("status")))return Map.of("id",reminderId,"status","sent","message","提醒已经发送，不能撤回");
-            db.update("UPDATE reminders SET status='cancelled' WHERE id=?",reminderId);
-            db.update("UPDATE background_jobs SET status='failed',error='提醒已取消',locked_by=NULL,lease_until=NULL,lease_version=lease_version+1 WHERE kind='reminder' AND ref_id=? AND status IN ('queued','running')",reminderId);
+            activities.cancelReminder(reminderId);
+            activities.cancelReminderJob(reminderId);
             return Map.of("id",reminderId,"status","cancelled");
         });
     }
@@ -148,7 +146,7 @@ public class ActivityService {
         requireOwner(activityId, username);
         Map<String, Object> result = journal.find("cal:" + activityId, "create_calendar_event");
         if (result == null) throw ApiException.notFound("该活动还没有日历事件");
-        Map<String,Object> activity=db.required("SELECT * FROM activities WHERE id=?",activityId);
+        Map<String,Object> activity=java.util.Objects.requireNonNull(activities.findActivity(activityId));
         JsonNode plan=parse(String.valueOf(activity.get("plan_json")));
         return ActivityManagementService.calendarWithUid(activityId,String.valueOf(activity.get("title")),plan.path("event_time").asText(),plan.path("description").asText(),
                 ((Number)activity.get("version")).intValue(),"cancelled".equals(activity.get("status")),String.valueOf(result.get("ics")),gate.timezone());
@@ -156,7 +154,7 @@ public class ActivityService {
 
     public Map<String, Object> sendManual(String activityId, String username, String content, String requestId) {
         requireOwner(activityId, username);
-        String group = db.one("SELECT group_openid FROM activity_channels WHERE activity_id=?", activityId)
+        String group = activities.findChannelGroup(activityId)
                 .map(row -> String.valueOf(row.get("group_openid"))).orElseThrow(() -> ApiException.notFound("该活动没有绑定 QQ 群"));
         return orchestrator.sendGroupMessage(activityId, group, content, "manual", "manual:" + activityId + ":" + requestId);
     }

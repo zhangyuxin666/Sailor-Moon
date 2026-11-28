@@ -6,6 +6,15 @@
 
 系统边界、部署模式与已知限制见 [架构说明](docs/ARCHITECTURE.md)，团队职责见 [协作分工](docs/TEAM.md)。
 
+## 项目入口
+
+- `web/src/`：React 页面与组件，数据大屏从 `pages/Analytics.tsx` 看起。
+- `src/main/java/com/activityassistant/`：Spring Boot 业务后端，接口从 `api/` 看起，业务逻辑在 `service/`，已迁移的 MyBatis 查询在 `persistence/mapper/`。
+- `ai_service/`：FastAPI 服务，文档切分和知识检索分别在 `chunker.py` 和 `rag.py`。
+- `src/main/resources/db/migration/`：Flyway 数据库迁移脚本。`qq-gateway/`：QQ 消息网关。
+
+本地单实例使用 `compose.yml`。双 Tomcat 演示使用 `compose.cluster.yml`，生产部署使用 `compose.prod.yml`，测试使用 `compose.test.yml`。`compose.replication.yml` 是启用 PostgreSQL 只读从库时叠加的配置。操作步骤见 [部署说明](docs/DEPLOYMENT.md)。
+
 ## 课程交付资料索引
 
 以下是项目共享资料，不是个人任务清单：
@@ -121,7 +130,7 @@ npm run qq-gateway
 Spring Boot 本机运行时仍需要 PostgreSQL 和 AI 服务。可只启动依赖：
 
 ```powershell
-docker compose up -d postgres ai
+docker compose up -d postgres rabbitmq ai
 $env:SPRING_DATASOURCE_URL="jdbc:postgresql://127.0.0.1:55432/activity"
 mvn spring-boot:run
 ```
@@ -134,10 +143,12 @@ mvn spring-boot:run
 - `POST /internal/ai/analyze-work-request`：识别作业、通知、问卷或复杂活动并生成草案。
 - `POST /internal/ai/recap`：根据数据库提供的真实统计生成复盘。
 - `POST /internal/ai/reply`：结合活动上下文和 RAG 回答 QQ 群问题。
+- `POST /internal/ai/chunk`：按句子边界和重叠窗口切分知识文档。
+- `POST /internal/ai/chunk-embed`：切分并批量生成每个分片的向量。
 - `POST /internal/ai/embed`：生成知识文档向量，仅返回计算结果。
 - `POST /internal/rag/search`：按组织隔离执行 pgvector 检索。
 
-知识文档写入统一走 Spring Boot 的 `POST /knowledge/documents`；Spring 校验当前组织和管理者权限、调用 AI 生成向量，然后由 Spring 写入 PostgreSQL。FastAPI 不写业务数据。
+知识文档写入统一走 Spring Boot 的 `POST /knowledge/documents`；Spring 校验当前组织和管理者权限、调用 AI 生成整篇兼容向量及有序分片向量，然后把文档写入 `rag_documents`、把分片写入 `rag_document_chunks`。FastAPI 不写业务数据。旧资料可以通过 `POST /knowledge/documents/{id}/reindex` 使用当前Embedding配置重新索引。
 
 示例：
 

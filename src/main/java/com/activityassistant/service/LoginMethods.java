@@ -1,7 +1,7 @@
 package com.activityassistant.service;
 
 import com.activityassistant.config.LoginMethodProperties;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.LoginMethodMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.security.PasswordHasher;
 import com.activityassistant.support.ApiException;
@@ -26,7 +26,7 @@ import java.util.UUID;
 
 @Service
 public class LoginMethods {
-    private final Db db;
+    private final LoginMethodMapper loginData;
     private final AuthService auth;
     private final PasswordHasher passwords;
     private final LoginProviders providers;
@@ -34,9 +34,9 @@ public class LoginMethods {
     private final TransactionTemplate transaction;
     private final SecureRandom random = new SecureRandom();
 
-    public LoginMethods(Db db, AuthService auth, PasswordHasher passwords, LoginProviders providers,
+    public LoginMethods(LoginMethodMapper loginData, AuthService auth, PasswordHasher passwords, LoginProviders providers,
                         LoginMethodProperties properties, PlatformTransactionManager transactions) {
-        this.db = db;
+        this.loginData = loginData;
         this.auth = auth;
         this.passwords = passwords;
         this.providers = providers;
@@ -50,10 +50,10 @@ public class LoginMethods {
 
     public Map<String, Object> bindings(String accountId) {
         var result = new LinkedHashMap<String, Object>(availability());
-        String phone = db.one("SELECT subject FROM account_login_methods WHERE account_id=? AND provider='phone'", accountId)
+        String phone = loginData.findPhone(accountId)
                 .map(row -> (String) row.get("subject")).orElse(null);
         result.put("bound_phone", phone == null ? null : phone.substring(0, 3) + "****" + phone.substring(7));
-        result.put("wechat_bound", db.one("SELECT 1 FROM account_login_methods WHERE account_id=? AND provider='wechat'", accountId).isPresent());
+        result.put("wechat_bound", loginData.findWechat(accountId).isPresent());
         return result;
     }
 
@@ -83,10 +83,7 @@ public class LoginMethods {
         reserve(new Limit("sms:total", 300, 3600));
         String code = String.format(Locale.ROOT, "%06d", random.nextInt(1_000_000));
         providers.sendPhoneCode(phone, code);
-        db.update("""
-                INSERT INTO phone_login_challenges (id, account_id, phone, binding_session_hash, code_hash, expires_at)
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP + INTERVAL '5 minutes')
-                """, id, accountId, phone, binding == null ? null : binding.sessionHash(), codeHash(id, code));
+        loginData.createPhoneChallenge(id, accountId, phone, binding == null ? null : binding.sessionHash(), codeHash(id, code));
         return id;
     }
 
@@ -105,13 +102,7 @@ public class LoginMethods {
     private Map<String, Object> verifyCode(String id, String code, String bindingSession) {
         requireEnabled(providers.phoneEnabled(), "手机号登录暂未启用");
         String hash = codeHash(id, code);
-        return db.one("""
-                UPDATE phone_login_challenges
-                SET attempts=CASE WHEN code_hash=? THEN 5 ELSE attempts+1 END
-                WHERE id=? AND binding_session_hash IS NOT DISTINCT FROM CAST(? AS VARCHAR)
-                    AND expires_at>CURRENT_TIMESTAMP AND attempts<5
-                RETURNING account_id, phone, code_hash=? AS verified
-                """, hash, id, bindingSession, hash)
+        return loginData.consumeCode(hash, id, bindingSession, hash)
                 .filter(row -> Boolean.TRUE.equals(row.get("verified"))).orElseThrow(LoginMethods::invalidCode);
     }
 
@@ -120,10 +111,7 @@ public class LoginMethods {
         reserve(ipLimit("wechat", address, 60, 60));
         String state = id();
         String browser = id() + id();
-        db.update("""
-                INSERT INTO wechat_login_states (state, browser_hash, binding_account_id, binding_session_hash, expires_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP + INTERVAL '10 minutes')
-                """, state, AuthService.sha256(browser), binding == null ? null : binding.accountId(),
+        loginData.createWechatState(state, AuthService.sha256(browser), binding == null ? null : binding.accountId(),
                 binding == null ? null : binding.sessionHash());
         return new WechatStart(providers.wechatUrl(state), browser);
     }
@@ -133,10 +121,7 @@ public class LoginMethods {
                 || browser == null || !browser.matches("[a-f0-9]{64}")) {
             return new WechatResult(false, "expired", null);
         }
-        var flow = db.one("""
-                DELETE FROM wechat_login_states WHERE state=? AND browser_hash=? AND expires_at>CURRENT_TIMESTAMP
-                RETURNING binding_account_id, binding_session_hash
-                """, state, AuthService.sha256(browser)).orElse(null);
+        var flow = loginData.consumeWechatState(state, AuthService.sha256(browser)).orElse(null);
         if (flow == null) return new WechatResult(false, "expired", null);
         String bindingAccountId = (String) flow.get("binding_account_id");
         boolean binding = bindingAccountId != null;
@@ -160,9 +145,9 @@ public class LoginMethods {
         if (!"phone".equals(provider) && !"wechat".equals(provider)) throw ApiException.notFound("登录方式不存在");
         transaction.executeWithoutResult(status -> {
             checkBindingSession(binding.accountId(), binding.sessionHash(), activeAccount(binding.accountId()));
-            db.update("DELETE FROM account_login_methods WHERE account_id=? AND provider=?", binding.accountId(), provider);
+            loginData.deleteMethod(binding.accountId(), provider);
             if ("phone".equals(provider)) {
-                db.update("DELETE FROM phone_login_challenges WHERE account_id=?", binding.accountId());
+                loginData.deletePhoneChallenges(binding.accountId());
             }
         });
     }
@@ -171,10 +156,7 @@ public class LoginMethods {
         try {
             transaction.executeWithoutResult(status -> {
                 checkBindingSession(binding.accountId(), binding.sessionHash(), activeAccount(binding.accountId()));
-                db.update("""
-                        INSERT INTO account_login_methods (account_id, provider, subject) VALUES (?, ?, ?)
-                        ON CONFLICT (account_id, provider) DO UPDATE SET subject=EXCLUDED.subject
-                        """, binding.accountId(), provider, subject);
+                loginData.bindMethod(binding.accountId(), provider, subject);
             });
         } catch (DuplicateKeyException exception) {
             throw new ApiException(HttpStatus.CONFLICT, "该登录方式已绑定其他账号");
@@ -192,26 +174,18 @@ public class LoginMethods {
     }
 
     private Map<String, Object> activeAccount(String accountId) {
-        return db.one("""
-                SELECT a.*, COALESCE(s.force_password_change, 0) AS force_password_change
-                FROM accounts a LEFT JOIN account_security s ON s.account_id=a.id
-                WHERE a.id=? AND a.status='active' FOR UPDATE OF a
-                """, accountId).orElseThrow(() -> ApiException.badRequest("账号不可用"));
+        return loginData.lockActiveAccount(accountId).orElseThrow(() -> ApiException.badRequest("账号不可用"));
     }
 
     private void checkBindingSession(String accountId, String hash, Map<String, Object> account) {
         if (((Number) account.get("force_password_change")).intValue() > 0
-                || db.one("SELECT 1 FROM auth_sessions WHERE token_hash=? AND account_id=? AND expires_at>? FOR UPDATE",
-                hash, accountId, LocalDateTime.now().toString()).isEmpty()) {
+                || loginData.lockBindingSession(hash, accountId, LocalDateTime.now().toString()).isEmpty()) {
             throw ApiException.forbidden("绑定授权已失效，请重新登录后操作");
         }
     }
 
     private String accountFor(String provider, String subject) {
-        return db.one("""
-                SELECT a.id FROM account_login_methods m JOIN accounts a ON a.id=m.account_id
-                WHERE m.provider=? AND m.subject=? AND a.status='active'
-                """, provider, subject).map(row -> (String) row.get("id")).orElse(null);
+        return loginData.findBoundAccount(provider, subject).map(row -> (String) row.get("id")).orElse(null);
     }
 
     private String codeHash(String id, String code) {
@@ -227,16 +201,7 @@ public class LoginMethods {
     private void reserve(Limit... limits) {
         transaction.executeWithoutResult(status -> {
             for (Limit limit : limits) {
-                int updated = db.update("""
-                        INSERT INTO login_method_limits (bucket, requests, expires_at)
-                        VALUES (?, 1, CURRENT_TIMESTAMP + (? * INTERVAL '1 second'))
-                        ON CONFLICT (bucket) DO UPDATE SET
-                            requests=CASE WHEN login_method_limits.expires_at<=CURRENT_TIMESTAMP THEN 1
-                                          ELSE login_method_limits.requests+1 END,
-                            expires_at=CASE WHEN login_method_limits.expires_at<=CURRENT_TIMESTAMP THEN EXCLUDED.expires_at
-                                            ELSE login_method_limits.expires_at END
-                        WHERE login_method_limits.expires_at<=CURRENT_TIMESTAMP OR login_method_limits.requests<?
-                        """, limit.key(), limit.seconds(), limit.requests());
+                int updated = loginData.reserveLimit(limit.key(), limit.seconds(), limit.requests());
                 if (updated == 0) throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "操作过于频繁，请稍后再试");
             }
         });
@@ -244,9 +209,9 @@ public class LoginMethods {
 
     @Scheduled(fixedDelay = 300_000)
     void removeExpiredChallenges() {
-        db.update("DELETE FROM phone_login_challenges WHERE expires_at<=CURRENT_TIMESTAMP");
-        db.update("DELETE FROM wechat_login_states WHERE expires_at<=CURRENT_TIMESTAMP");
-        db.update("DELETE FROM login_method_limits WHERE expires_at<=CURRENT_TIMESTAMP");
+        loginData.deleteExpiredPhone();
+        loginData.deleteExpiredWechat();
+        loginData.deleteExpiredLimits();
     }
 
     private static Limit ipLimit(String kind, String address, int requests, int seconds) {

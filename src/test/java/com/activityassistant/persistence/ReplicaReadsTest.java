@@ -1,75 +1,104 @@
 package com.activityassistant.persistence;
 
+import com.activityassistant.persistence.mapper.ActivityMapper;
+import com.activityassistant.persistence.mapper.ReplicationMapper;
+import org.mybatis.spring.SqlSessionTemplate;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
-import org.springframework.jdbc.core.ConnectionCallback;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
+
 import java.util.List;
 import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class ReplicaReadsTest {
-    private final JdbcTemplate primary = mock(JdbcTemplate.class);
-    private final JdbcTemplate replica = mock(JdbcTemplate.class);
-    private final ReplicaReads reads = new ReplicaReads(primary, replica);
-    @AfterEach void clearTransaction() { TransactionSynchronizationManager.clear(); }
+    private final ActivityMapper primary = mock(ActivityMapper.class);
+    private final ActivityMapper replica = mock(ActivityMapper.class);
+    private final ReplicationMapper primaryWal = mock(ReplicationMapper.class);
+    private final ReplicationMapper replicaWal = mock(ReplicationMapper.class);
+    private final SqlSessionTemplate session = mock(SqlSessionTemplate.class);
+    private final ReplicaReads reads = new ReplicaReads(primaryWal, session, TransactionOperations.withoutTransaction());
 
-    @Test void disabledUsesPrimaryWithoutProbingWal() {
-        var disabled = new ReplicaReads(primary, null);
-        when(primary.queryForList("SELECT 1", new Object[0])).thenReturn(List.of(Map.of("n", 1)));
-        assertThat(disabled.list("SELECT 1")).containsExactly(Map.of("n",1));
-        verify(primary, never()).queryForObject(anyString(), eq(String.class));
+    @BeforeEach
+    void mapReplicaQueries() {
+        when(session.getMapper(ReplicationMapper.class)).thenReturn(replicaWal);
+        when(session.getMapper(ActivityMapper.class)).thenReturn(replica);
     }
 
-    @Test void transactionsNeverLeavePrimaryIncludingReadOnlyTransactions() {
+    private List<Map<String, Object>> list(ReplicaReads route) {
+        return route.readMapper(ActivityMapper.class, primary, mapper -> mapper.listSteps("a"));
+    }
+
+    @AfterEach
+    void clearTransaction() {
+        TransactionSynchronizationManager.clear();
+    }
+
+    @Test
+    void disabledUsesPrimaryWithoutProbingWal() {
+        when(primary.listSteps("a")).thenReturn(List.of(Map.of("id", 1)));
+        assertThat(list(new ReplicaReads(primaryWal, null, null)))
+                .containsExactly(Map.of("id", 1));
+        verifyNoMoreInteractionsAfterPrimaryRead();
+    }
+
+    @Test
+    void transactionsNeverLeavePrimaryIncludingReadOnlyTransactions() {
         TransactionSynchronizationManager.setActualTransactionActive(true);
         TransactionSynchronizationManager.setCurrentTransactionReadOnly(true);
-        reads.list("SELECT 1");
-        verify(primary).queryForList("SELECT 1", new Object[0]); verifyNoInteractions(replica);
+        list(reads);
+        verifyNoMoreInteractionsAfterPrimaryRead();
     }
 
-    @Test void unavailableReplicaFallsBackAndCountsIt() {
-        when(primary.queryForObject(anyString(), eq(String.class))).thenReturn("0/1234");
-        when(replica.execute(any(ConnectionCallback.class))).thenThrow(new DataAccessResourceFailureException("offline"));
-        reads.list("SELECT * FROM steps WHERE activity_id=?", "a");
-        verify(primary).queryForList("SELECT * FROM steps WHERE activity_id=?", "a");
-        assertThat(reads.status()).containsEntry("primary_fallbacks",1L).containsEntry("replica_queries",0L);
+    @Test
+    void unavailableReplicaFallsBackAndCountsIt() {
+        stubPrimaryFence();
+        when(replicaWal.hasReplayed("0/1234"))
+                .thenThrow(new DataAccessResourceFailureException("offline"));
+        assertFallback();
     }
 
-    @SuppressWarnings("unchecked")
-    private void connection(boolean caughtUp) throws Exception {
-        Connection connection = mock(Connection.class);
-        PreparedStatement fence = mock(PreparedStatement.class);
-        ResultSet position = mock(ResultSet.class);
-        when(connection.prepareStatement(contains("pg_is_in_recovery"))).thenReturn(fence);
-        when(fence.executeQuery()).thenReturn(position); when(position.getBoolean(1)).thenReturn(caughtUp);
-        PreparedStatement query = mock(PreparedStatement.class);
-        when(connection.prepareStatement("SELECT id FROM steps WHERE activity_id=?")).thenReturn(query);
-        ResultSet result = mock(ResultSet.class); when(query.executeQuery()).thenReturn(result);
-        when(result.next()).thenReturn(false);
-        when(primary.queryForObject(anyString(), eq(String.class))).thenReturn("0/1234");
-        when(replica.execute(any(ConnectionCallback.class))).thenAnswer(call ->
-                ((ConnectionCallback<?>)call.getArgument(0)).doInConnection(connection));
+    @Test
+    void lagOrPromotedReplicaFallsBackBeforeBusinessRead() {
+        stubReplay(false);
+        assertFallback();
+        verify(replica, never()).listSteps("a");
     }
 
-    @Test void lagOrPromotedReplicaFallsBackBeforeBusinessRead() throws Exception {
-        connection(false);
-        reads.list("SELECT id FROM steps WHERE activity_id=?", "a");
-        verify(primary).queryForList("SELECT id FROM steps WHERE activity_id=?", "a");
-        assertThat(reads.status()).containsEntry("primary_fallbacks",1L);
+    @Test
+    void caughtUpReplicaServesQueryIncludingEmptyResultsWithoutPrimaryRead() {
+        stubReplay(true);
+        when(replica.listSteps("a")).thenReturn(List.of());
+        assertThat(list(reads)).isEmpty();
+        verify(replica).listSteps("a");
+        verify(primary, never()).listSteps("a");
+        assertThat(reads.status()).containsEntry("primary_fallbacks", 0L).containsEntry("replica_queries", 1L);
     }
 
-    @Test void caughtUpReplicaServesQueryIncludingEmptyResultsWithoutPrimaryRead() throws Exception {
-        connection(true);
-        assertThat(reads.list("SELECT id FROM steps WHERE activity_id=?", "a")).isEmpty();
-        verify(primary, never()).queryForList(anyString(), any(Object[].class));
-        assertThat(reads.status()).containsEntry("replica_queries",1L).containsEntry("primary_fallbacks",0L);
+    private void assertFallback() {
+        list(reads);
+        verify(primary).listSteps("a");
+        assertThat(reads.status()).containsEntry("primary_fallbacks", 1L).containsEntry("replica_queries", 0L);
+    }
+
+    private void verifyNoMoreInteractionsAfterPrimaryRead() {
+        verify(primary).listSteps("a");
+        verifyNoMoreInteractions(primary);
+        verifyNoInteractions(primaryWal, replicaWal, replica);
+    }
+
+    private void stubReplay(boolean caughtUp) {
+        stubPrimaryFence();
+        when(replicaWal.hasReplayed("0/1234"))
+                .thenReturn(caughtUp);
+    }
+
+    private void stubPrimaryFence() {
+        when(primaryWal.currentPosition()).thenReturn("0/1234");
     }
 }

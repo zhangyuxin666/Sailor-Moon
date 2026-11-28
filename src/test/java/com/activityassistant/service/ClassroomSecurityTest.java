@@ -2,7 +2,7 @@ package com.activityassistant.service;
 
 import com.activityassistant.api.ApiModels;
 import com.activityassistant.config.AppProperties;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.ClassroomMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.support.ApiException;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,10 +22,7 @@ import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.*;
 
 class ClassroomSecurityTest {
-    private static final String CLASS_QUERY = "SELECT * FROM classes WHERE id=?";
-    private static final String MEMBERSHIP_QUERY = "SELECT co.organization_id, om.role FROM class_organizations co " +
-            "JOIN organization_members om ON om.organization_id=co.organization_id WHERE co.class_id=? AND om.account_id=?";
-    private final Db db = mock(Db.class);
+    private final ClassroomMapper db = mock(ClassroomMapper.class);
     private final AuthService auth = mock(AuthService.class);
     private final AuditService audits = mock(AuditService.class);
     private final QqService qq = mock(QqService.class);
@@ -41,8 +38,8 @@ class ClassroomSecurityTest {
         classroom.put("id", "class-id");
         classroom.put("name", "Class");
         classroom.put("manager_id", manager.id());
-        when(db.one(CLASS_QUERY, "class-id")).thenReturn(Optional.of(classroom));
-        when(db.one(MEMBERSHIP_QUERY, "class-id", manager.id()))
+        when(db.findClass("class-id")).thenReturn(Optional.of(classroom));
+        when(db.findMembership("class-id", manager.id()))
                 .thenReturn(Optional.of(Map.of("organization_id", "org-id", "role", "owner")));
     }
 
@@ -54,13 +51,12 @@ class ClassroomSecurityTest {
 
         assertThat(result).containsEntry("qq_group_bound", false);
         verifyNoInteractions(qq);
-        verify(db, never()).list(startsWith("SELECT group_openid FROM qq_bindings"), any(Object[].class));
     }
 
     @Test
     void existingActiveParticipantCanOnlyBeReusedWithinItsOwnOrganization() {
         existing("student", "participant", "active");
-        when(db.list("SELECT organization_id FROM organization_members WHERE account_id=?", "participant-id"))
+        when(db.listOrganizations("participant-id"))
                 .thenReturn(List.of(Map.of("organization_id", "org-id")));
 
         Map<String, Object> result = service.importRoster(manager, "class-id", List.of(member(" student ")));
@@ -69,15 +65,14 @@ class ClassroomSecurityTest {
         assertThat(((List<?>) result.get("members")).get(0)).isEqualTo(Map.of(
                 "id", "participant-id", "username", "student", "display_name", "Existing name", "student_no", "001"));
         verifyNoInteractions(auth);
-        verify(db).update(eq("INSERT INTO class_members (class_id, account_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING"),
-                eq("class-id"), eq("participant-id"), anyString());
-        verify(db, never()).update(startsWith("INSERT INTO organization_members"), any(Object[].class));
+        verify(db).addClassMember(eq("class-id"), eq("participant-id"), anyString());
+        verify(db, never()).addParticipant(anyString(), anyString(), anyString());
     }
 
     @Test
     void importRejectsParticipantFromAnotherOrganizationWithoutWritingAnything() {
         existing("student", "participant", "active");
-        when(db.list("SELECT organization_id FROM organization_members WHERE account_id=?", "participant-id"))
+        when(db.listOrganizations("participant-id"))
                 .thenReturn(List.of(Map.of("organization_id", "other-org")));
 
         assertImportForbidden(List.of(member("student")));
@@ -93,7 +88,7 @@ class ClassroomSecurityTest {
     @Test
     void importRejectsHistoricalParticipantLinkedToSeveralOrganizations() {
         existing("student", "participant", "active");
-        when(db.list("SELECT organization_id FROM organization_members WHERE account_id=?", "participant-id"))
+        when(db.listOrganizations("participant-id"))
                 .thenReturn(List.of(Map.of("organization_id", "org-id"), Map.of("organization_id", "other-org")));
 
         assertImportForbidden(List.of(member("student")));
@@ -116,7 +111,7 @@ class ClassroomSecurityTest {
     @Test
     void invalidLaterMemberPreventsCreatingEarlierNewAccount() {
         existing("z-other", "participant", "active");
-        when(db.list("SELECT organization_id FROM organization_members WHERE account_id=?", "participant-id"))
+        when(db.listOrganizations("participant-id"))
                 .thenReturn(List.of(Map.of("organization_id", "other-org")));
 
         assertImportForbidden(List.of(member("a-new"), member("z-other")));
@@ -127,7 +122,7 @@ class ClassroomSecurityTest {
         assertThatThrownBy(() -> service.importRoster(manager, "class-id",
                 List.of(member("student"), member(" student "))))
                 .isInstanceOf(ApiException.class);
-        verify(db, never()).update(anyString(), any(Object[].class));
+        assertNoMapperWrites();
         verifyNoInteractions(auth, audits);
     }
 
@@ -142,7 +137,7 @@ class ClassroomSecurityTest {
         assertThat(result).containsEntry("group_openid", null)
                 .containsEntry("qq_group_bound", false).containsEntry("binding_needs_update", true);
         assertThat((List<?>) result.get("groups")).hasSize(1);
-        verify(db, never()).update(anyString(), any(Object[].class));
+        assertNoMapperWrites();
     }
 
     @Test
@@ -152,7 +147,7 @@ class ClassroomSecurityTest {
         Map<String, Object> result = service.bindClassGroup(manager, "class-id", " own-group ");
 
         assertThat(result).containsEntry("group_openid", "own-group").containsEntry("qq_group_bound", true);
-        verify(db).update("UPDATE classes SET qq_group_openid=? WHERE id=?", "own-group", "class-id");
+        verify(db).updateGroup("own-group", "class-id");
         verify(audits).write(eq("class.qq_binding_update"), eq(manager.id()), eq("org-id"),
                 eq("class"), eq("class-id"), any());
     }
@@ -162,7 +157,7 @@ class ClassroomSecurityTest {
         assertThatThrownBy(() -> service.bindClassGroup(manager, "class-id", "foreign-group"))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("本组织");
-        verify(db, never()).update(anyString(), any(Object[].class));
+        assertNoMapperWrites();
         verifyNoInteractions(audits);
     }
 
@@ -173,17 +168,17 @@ class ClassroomSecurityTest {
         Map<String, Object> result = service.bindClassGroup(manager, "class-id", null);
 
         assertThat(result).containsEntry("group_openid", null).containsEntry("qq_group_bound", false);
-        verify(db).update("UPDATE classes SET qq_group_openid=? WHERE id=?", null, "class-id");
+        verify(db).updateGroup(null, "class-id");
         verifyNoInteractions(qq);
     }
 
     @Test
     void managerCannotReadOrUpdateOtherOrganizationsClassBindings() {
-        when(db.one(MEMBERSHIP_QUERY, "class-id", manager.id())).thenReturn(Optional.empty());
+        when(db.findMembership("class-id", manager.id())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.classQqBindings(manager, "class-id")).isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> service.bindClassGroup(manager, "class-id", "group")).isInstanceOf(ApiException.class);
-        verify(db, never()).update(anyString(), any(Object[].class));
+        assertNoMapperWrites();
         verifyNoInteractions(qq, audits);
     }
 
@@ -194,26 +189,26 @@ class ClassroomSecurityTest {
         assertThatThrownBy(() -> service.createTodo(manager, "class-id",
                 new ApiModels.TodoCreateRequest("Homework", "", "2026-10-26T12:00:00", "homework")))
                 .isInstanceOf(ApiException.class).hasMessageContaining("重新选择");
-        verify(db, never()).update(anyString(), any(Object[].class));
+        assertNoMapperWrites();
         verify(qq, never()).sendGroup(anyString(), anyString(), anyString());
     }
 
     @Test
     void siteOnlyTodoDoesNotReadOrSendToTheBoundGroup() {
         classroom.put("qq_group_openid", "bound-group");
-        when(db.list("SELECT account_id FROM class_members WHERE class_id=?", "class-id"))
+        when(db.listClassAccounts("class-id"))
                 .thenReturn(List.of(Map.of("account_id", "student-id")));
 
         var result = service.createTodo(manager, "class-id",
                 new ApiModels.TodoCreateRequest("Homework", "", "2026-11-13T12:00:00", "homework"), false);
 
         assertThat(result).containsEntry("assigned_count", 1);
-        verify(db).update(startsWith("INSERT INTO todo_assignees"), eq(result.get("id")), eq("student-id"), anyString());
+        verify(db).assignTodo(eq(result.get("id")), eq("student-id"), anyString());
         verifyNoInteractions(qq);
     }
 
     private void existing(String username, String role, String status) {
-        when(db.one("SELECT * FROM accounts WHERE username=? FOR UPDATE", username))
+        when(db.lockAccount(username))
                 .thenReturn(Optional.of(Map.of("id", "participant-id", "username", username,
                         "role", role, "status", status, "display_name", "Existing name", "student_no", "001")));
     }
@@ -225,7 +220,12 @@ class ClassroomSecurityTest {
     private void assertImportForbidden(List<ApiModels.RosterMember> members) {
         assertThatThrownBy(() -> service.importRoster(manager, "class-id", members))
                 .isInstanceOf(ApiException.class);
-        verify(db, never()).update(anyString(), any(Object[].class));
+        assertNoMapperWrites();
         verifyNoInteractions(auth, audits);
+    }
+    private void assertNoMapperWrites() {
+        assertThat(mockingDetails(db).getInvocations()).noneMatch(invocation ->
+                invocation.getMethod().isAnnotationPresent(org.apache.ibatis.annotations.Insert.class)
+                || invocation.getMethod().isAnnotationPresent(org.apache.ibatis.annotations.Update.class));
     }
 }

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import DataState from '../components/DataState';
-import { api, useApi } from '../lib/api';
+import { api } from '../lib/api';
 import type { AnalyticsOverview, StatusPoint, TrendPoint } from '../types/analytics';
 import '../styles/analytics.css';
+import '../styles/analytics-live.css';
 
 const statusNames: Record<string, string> = {
   queued: '排队中', waiting_input: '待补充', ready: '进行中', finished: '已完成',
@@ -56,14 +57,54 @@ function StatusBars({ data }: { data: StatusPoint[] }) {
 export default function Analytics() {
   const [days, setDays] = useState(30);
   const [classId, setClassId] = useState('');
+  const [data, setData] = useState<AnalyticsOverview | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [live, setLive] = useState<'connecting' | 'live' | 'offline'>('connecting');
   const endpoint = useMemo(() => `/analytics/overview?days=${days}${classId ? `&class_id=${encodeURIComponent(classId)}` : ''}`,
     [days, classId]);
-  const { data, loading, error, reload } = useApi<AnalyticsOverview>(() => api(endpoint), [endpoint]);
 
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const next = await api<AnalyticsOverview>(endpoint);
+      setData(next);
+      setError(null);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : '加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [endpoint]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // SSE：数据变化时服务端主动推；断开后自动降级为 15 秒轮询，页面不会停在旧数据。
   useEffect(() => {
-    const timer = window.setInterval(reload, 30_000);
-    return () => window.clearInterval(timer);
-  }, [reload]);
+    let fallback: number | undefined;
+    const query = `days=${days}${classId ? `&class_id=${encodeURIComponent(classId)}` : ''}`;
+    const source = new EventSource(`/analytics/stream?${query}`, { withCredentials: true });
+
+    source.addEventListener('snapshot', (event) => {
+      try {
+        setData(JSON.parse((event as MessageEvent).data) as AnalyticsOverview);
+        setError(null);
+        setLoading(false);
+        setLive('live');
+        if (fallback !== undefined) { window.clearInterval(fallback); fallback = undefined; }
+      } catch { /* 单条消息解析失败时忽略，不影响连接 */ }
+    });
+
+    source.onerror = () => {
+      setLive('offline');
+      if (fallback === undefined) fallback = window.setInterval(load, 15_000);
+    };
+
+    return () => {
+      source.close();
+      if (fallback !== undefined) window.clearInterval(fallback);
+    };
+  }, [days, classId, load]);
 
   const metrics = data ? [
     ['活动总数', data.summary.activities, `进行中 ${data.summary.active_activities}`],
@@ -95,9 +136,10 @@ export default function Analytics() {
       <label>周期<select className="ws-select" value={days} onChange={(event) => setDays(Number(event.target.value))}>
         <option value={7}>近 7 天</option><option value={30}>近 30 天</option><option value={90}>近 90 天</option>
       </select></label>
-      <button className="ws-button light" type="button" onClick={reload}>刷新</button>
+      <button className="ws-button light" type="button" onClick={load}>刷新</button>
+      <span className={`analytics-live ${live}`}>{live === 'live' ? '实时推送中' : live === 'connecting' ? '连接中…' : '已降级为轮询'}</span>
     </div></header>
-    <DataState loading={loading} error={error} onRetry={reload} loadingText="数据大屏加载中…" />
+    <DataState loading={loading} error={error} onRetry={load} loadingText="数据大屏加载中…" />
     {!loading && !error && data && <>
       <section className="analytics-metrics">{metrics.map(([label, value, hint], index) => <article key={label} className={`metric-${index + 1}`}>
         <JunimoSticker color={(['green', 'blue', 'yellow', 'pink', 'purple'] as const)[index]} mood={index % 2 ? 'calm' : 'happy'} />
@@ -126,7 +168,7 @@ export default function Analytics() {
             <div><dt>平均评分</dt><dd>{data.participation.average_rating}/5</dd></div></dl>
         </section>
       </div>
-      <p className="analytics-updated">数据每 30 秒自动刷新 · 最近更新 {new Date(data.generated_at).toLocaleString('zh-CN')}</p>
+      <p className="analytics-updated">数据实时推送 · 最近更新 {new Date(data.generated_at).toLocaleString('zh-CN')}</p>
     </>}
   </div>;
 }

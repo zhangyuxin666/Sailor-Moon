@@ -20,6 +20,21 @@ spring:
     hikari:
       maximum-pool-size: ${DB_POOL_SIZE:10}
       minimum-idle: 1
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:activity}
+    password: ${RABBITMQ_PASSWORD:activity}
+    connection-timeout: 3s
+    template:
+      retry:
+        enabled: true
+        initial-interval: 500ms
+        max-attempts: 3
+        multiplier: 2
+    listener:
+      simple:
+        missing-queues-fatal: false
   flyway:
     enabled: true
     baseline-on-migrate: true
@@ -40,7 +55,15 @@ management:
       probes:
         enabled: true
 
+mybatis:
+  configuration:
+    call-setters-on-nulls: true
+    return-instance-for-empty-row: true
+    local-cache-scope: STATEMENT
+
 app:
+  messaging:
+    rabbit-enabled: ${RABBITMQ_ENABLED:true}
   database:
     read-enabled: ${DB_READ_ENABLED:false}
     read-url: ${DB_READ_URL:jdbc:postgresql://postgres-replica:5432/activity?connectTimeout=2&socketTimeout=4}
@@ -62,7 +85,7 @@ app:
   user-storage-quota-mb: ${USER_STORAGE_QUOTA_MB:200}
   storage-local-path: ${STORAGE_LOCAL_PATH:data/uploads}
   timezone: ${TIMEZONE:Asia/Shanghai}
-  ai-base-url: ${AI_SERVICE_URL:http://127.0.0.1:8000}
+  ai-base-url: ${AI_SERVICE_URL:http://127.0.0.1:8002}
   ai-internal-token: ${AI_INTERNAL_TOKEN:change-this-local-ai-token}
   qq-gateway-base-url: ${QQ_GATEWAY_URL:http://127.0.0.1:3000}
   qq-gateway-token: ${QQ_GATEWAY_TOKEN:change-this-local-token}

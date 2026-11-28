@@ -1,7 +1,7 @@
 package com.activityassistant.api;
 
 import com.activityassistant.config.AppProperties;
-import com.activityassistant.persistence.Db;
+import com.activityassistant.persistence.mapper.AccountAdministrationMapper;
 import com.activityassistant.security.AccountPrincipal;
 import com.activityassistant.service.AuditService;
 import com.activityassistant.service.AuthService;
@@ -38,16 +38,16 @@ import java.util.UUID;
 @RestController
 public class AuthController {
     private final AuthService auth;
-    private final Db db;
+    private final AccountAdministrationMapper accounts;
     private final AppProperties properties;
     private final AuditService audits;
     private final StorageService storage;
     private final ObjectMapper objectMapper;
 
-    public AuthController(AuthService auth, Db db, AppProperties properties, AuditService audits,
+    public AuthController(AuthService auth, AccountAdministrationMapper accounts, AppProperties properties, AuditService audits,
                           StorageService storage, ObjectMapper objectMapper) {
         this.auth = auth;
-        this.db = db;
+        this.accounts = accounts;
         this.properties = properties;
         this.audits = audits;
         this.storage = storage;
@@ -63,7 +63,7 @@ public class AuthController {
             result.put("account", null);
         } else {
             Map<String, Object> publicAccount = account.toPublicMap();
-            publicAccount.put("privacy_accepted", db.one("SELECT 1 FROM privacy_consents WHERE account_id=? AND policy_version='1.0'", account.id()).isPresent());
+            publicAccount.put("privacy_accepted", accounts.findConsent(account.id()).isPresent());
             result.put("account", publicAccount);
         }
         return result;
@@ -107,15 +107,7 @@ public class AuthController {
         AccountPrincipal manager = required(authentication);
         if (!manager.isManager()) throw ApiException.forbidden("只有管理者可以重置成员密码");
         String organizationId = auth.organizationOf(manager.id());
-        boolean allowed = db.one("SELECT 1 FROM accounts a JOIN organization_members om ON om.account_id=a.id " +
-                        "WHERE a.id=? AND a.role='participant' AND a.status='active' AND om.organization_id=? " +
-                        "AND EXISTS (SELECT 1 FROM organization_members manager_membership " +
-                        "WHERE manager_membership.organization_id=om.organization_id AND manager_membership.account_id=? " +
-                        "AND manager_membership.role IN ('owner','manager')) " +
-                        "AND NOT EXISTS (SELECT 1 FROM organization_members other_membership " +
-                        "WHERE other_membership.account_id=a.id AND other_membership.organization_id<>om.organization_id) " +
-                        "FOR UPDATE OF a",
-                accountId, organizationId, manager.id()).isPresent();
+        boolean allowed = accounts.lockResetTarget(accountId, organizationId, manager.id()).isPresent();
         if (!allowed) throw ApiException.forbidden("无权重置该账号密码");
         auth.setPassword(accountId, body.newPassword(), true);
         audits.write("account.password_reset", manager.id(), organizationId, "account", accountId, null);
@@ -128,9 +120,7 @@ public class AuthController {
                                 @RequestBody ApiModels.PrivacyConsentRequest body) {
         if (!body.accept()) throw ApiException.badRequest("必须同意隐私政策后才能继续使用");
         AccountPrincipal account = required(authentication);
-        db.update("INSERT INTO privacy_consents (account_id, policy_version, accepted_at, ip_address) VALUES (?, '1.0', ?, ?) " +
-                        "ON CONFLICT (account_id) DO UPDATE SET policy_version='1.0', accepted_at=EXCLUDED.accepted_at, ip_address=EXCLUDED.ip_address",
-                account.id(), LocalDateTime.now().toString(), request.getRemoteAddr());
+        accounts.saveConsent(account.id(), LocalDateTime.now().toString(), request.getRemoteAddr());
         return Map.of("status", "ok", "policy_version", "1.0");
     }
 
@@ -140,8 +130,7 @@ public class AuthController {
         AccountPrincipal account = required(authentication);
         if (!account.isManager()) throw ApiException.forbidden("只有管理者可以查看审计日志");
         String organizationId = auth.organizationOf(account.id());
-        List<Map<String, Object>> logs = db.list("SELECT * FROM audit_logs WHERE organization_id=? ORDER BY created_at DESC LIMIT ?",
-                organizationId, Math.min(Math.max(limit, 1), 500));
+        List<Map<String, Object>> logs = accounts.listAuditLogs(organizationId, Math.min(Math.max(limit, 1), 500));
         return Map.of("logs", logs);
     }
 
@@ -151,11 +140,10 @@ public class AuthController {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("exported_at", LocalDateTime.now().toString());
         payload.put("account", account.toPublicMap());
-        payload.put("login_methods", db.list("SELECT provider, CASE WHEN provider='phone' THEN subject END AS phone "
-                + "FROM account_login_methods WHERE account_id=?", account.id()));
-        payload.put("classes", db.list("SELECT c.id, c.name FROM class_members cm JOIN classes c ON c.id=cm.class_id WHERE cm.account_id=?", account.id()));
-        payload.put("submissions", db.list("SELECT t.title, ta.status, ta.note, ta.original_filename, ta.submitted_at FROM todo_assignees ta JOIN todos t ON t.id=ta.todo_id WHERE ta.account_id=?", account.id()));
-        payload.put("privacy_consents", db.list("SELECT policy_version, accepted_at FROM privacy_consents WHERE account_id=?", account.id()));
+        payload.put("login_methods", accounts.listLoginMethods(account.id()));
+        payload.put("classes", accounts.listClasses(account.id()));
+        payload.put("submissions", accounts.listSubmissions(account.id()));
+        payload.put("privacy_consents", accounts.listConsents(account.id()));
         byte[] data = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload).getBytes(StandardCharsets.UTF_8);
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"my-data.json\"").body(data);
@@ -166,22 +154,21 @@ public class AuthController {
     ResponseEntity<Map<String, String>> deleteAccount(Authentication authentication) {
         AccountPrincipal account = required(authentication);
         if (account.isManager()) throw ApiException.badRequest("管理者需要先转移或删除名下组织，暂时不能直接注销");
-        db.one("SELECT 1 FROM accounts WHERE id=? FOR UPDATE", account.id());
-        db.list("SELECT storage_key FROM file_assets WHERE account_id=?", account.id())
+        accounts.lockAccount(account.id());
+        accounts.listFileKeys(account.id())
                 .forEach(asset -> storage.delete(String.valueOf(asset.get("storage_key"))));
-        List<Map<String, Object>> organizations = db.list("SELECT organization_id FROM organization_members WHERE account_id=?", account.id());
+        List<Map<String, Object>> organizations = accounts.listOrganizations(account.id());
         organizations.forEach(org -> audits.write("account.delete", account.id(), String.valueOf(org.get("organization_id")), "account", account.id(), null));
-        db.update("DELETE FROM auth_sessions WHERE account_id=?", account.id());
-        db.update("DELETE FROM account_login_methods WHERE account_id=?", account.id());
-        db.update("DELETE FROM phone_login_challenges WHERE account_id=?", account.id());
-        db.update("DELETE FROM wechat_login_states WHERE binding_account_id=?", account.id());
-        db.update("DELETE FROM privacy_consents WHERE account_id=?", account.id());
-        db.update("DELETE FROM class_members WHERE account_id=?", account.id());
-        db.update("DELETE FROM todo_assignees WHERE account_id=?", account.id());
-        db.update("DELETE FROM file_assets WHERE account_id=?", account.id());
-        db.update("DELETE FROM organization_members WHERE account_id=?", account.id());
-        db.update("UPDATE accounts SET username=?, display_name='已注销用户', student_no=NULL, password_hash=?, status='deleted' WHERE id=?",
-                "deleted-" + UUID.randomUUID().toString().replace("-", ""), UUID.randomUUID().toString(), account.id());
+        accounts.deleteSessions(account.id());
+        accounts.deleteLoginMethods(account.id());
+        accounts.deletePhoneChallenges(account.id());
+        accounts.deleteWechatStates(account.id());
+        accounts.deleteConsents(account.id());
+        accounts.deleteClassMemberships(account.id());
+        accounts.deleteAssignments(account.id());
+        accounts.deleteAssets(account.id());
+        accounts.deleteOrganizationMemberships(account.id());
+        accounts.anonymizeAccount("deleted-" + UUID.randomUUID().toString().replace("-", ""), UUID.randomUUID().toString(), account.id());
         return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, expiredCookie().toString())
                 .body(Map.of("status", "deleted", "deleted_at", LocalDateTime.now().toString()));
     }
